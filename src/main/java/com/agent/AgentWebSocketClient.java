@@ -85,7 +85,13 @@ public class AgentWebSocketClient extends WebSocketClient {
 
     private void startScreenCapture() {
         if (screenCapture == null) return;
+        startScreenCaptureWithInterval(66); // 66 мс ≈ 15 FPS по умолчанию
+    }
 
+    private void startScreenCaptureWithInterval(int intervalMs) {
+        if (screenTimer != null) {
+            screenTimer.cancel();
+        }
         screenTimer = new Timer(true);
         screenTimer.scheduleAtFixedRate(new TimerTask() {
             @Override
@@ -113,12 +119,12 @@ public class AgentWebSocketClient extends WebSocketClient {
                     System.err.println("✗ Error sending frame: " + e.getMessage());
                 }
             }
-        }, 0, 66); // 66 мс ≈ 15 FPS
+        }, 0, intervalMs);
     }
 
     @Override
     public void onMessage(String message) {
-        System.out.println("← Received command: " + message);
+        System.out.println("← Received: " + message);
 
         try {
             JsonNode json = mapper.readTree(message);
@@ -153,9 +159,30 @@ public class AgentWebSocketClient extends WebSocketClient {
                     default:
                         System.out.println("  → Unknown action: " + action);
                 }
+            } else if ("settings".equals(type)) {
+                String resolution = json.get("resolution").asText();
+                int fps = json.get("fps").asInt();
+
+                // Устанавливаем разрешение
+                int width, height;
+                switch (resolution) {
+                    case "360": width = 640; height = 360; break;
+                    case "480": width = 854; height = 480; break;
+                    case "720": width = 1280; height = 720; break;
+                    case "1080": width = 1920; height = 1080; break;
+                    case "1440": width = 2560; height = 1440; break;
+                    default: width = 1280; height = 720;
+                }
+                screenCapture.setResolution(width, height);
+
+                // Изменяем интервал отправки кадров
+                int intervalMs = 1000 / fps;
+                startScreenCaptureWithInterval(intervalMs);
+
+                System.out.println("Settings applied: " + resolution + "p, " + fps + " FPS");
             }
         } catch (Exception e) {
-            System.err.println("✗ Error executing command: " + e.getMessage());
+            System.err.println("✗ Error processing message: " + e.getMessage());
         }
     }
 

@@ -10,6 +10,8 @@ public class ScreenCapture {
 
     private final Robot robot;
     private final Rectangle screenRect;
+    private int targetWidth = 1280;
+    private int targetHeight = 720;
 
     public ScreenCapture() throws AWTException {
         robot = new Robot();
@@ -17,18 +19,20 @@ public class ScreenCapture {
         System.out.println("✓ Screen capture initialized. Screen size: " + screenRect.width + "x" + screenRect.height);
     }
 
+    public void setResolution(int width, int height) {
+        this.targetWidth = width;
+        this.targetHeight = height;
+        System.out.println("Resolution set to: " + targetWidth + "x" + targetHeight);
+    }
+
     public String captureAsBase64() throws IOException {
         BufferedImage image = robot.createScreenCapture(screenRect);
 
-        // Увеличиваем размер до 1024x768 (вместо 320x240)
-        int newWidth = 1024;
-        int newHeight = 768;
-        BufferedImage scaledImage = new BufferedImage(newWidth, newHeight, BufferedImage.TYPE_INT_RGB);
+        BufferedImage scaledImage = new BufferedImage(targetWidth, targetHeight, BufferedImage.TYPE_INT_RGB);
         Graphics2D g = scaledImage.createGraphics();
-        g.drawImage(image, 0, 0, newWidth, newHeight, null);
+        g.drawImage(image, 0, 0, targetWidth, targetHeight, null);
         g.dispose();
 
-        // Увеличиваем качество JPEG (настройка не поддерживается напрямую, но размер будет больше)
         ByteArrayOutputStream baos = new ByteArrayOutputStream();
         ImageIO.write(scaledImage, "jpg", baos);
         baos.flush();
