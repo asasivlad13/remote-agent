@@ -88,18 +88,30 @@ public class AgentWebSocketClient extends WebSocketClient {
                 try {
                     String base64Image = screenCapture.captureAsBase64();
 
-                    Map<String, Object> msg = new HashMap<>();
-                    msg.put("type", "frame");
-                    msg.put("image", base64Image);
-                    String json = mapper.writeValueAsString(msg);
-                    send(json);
+                    // Отправляем через HTTP POST
+                    java.net.http.HttpClient client = java.net.http.HttpClient.newHttpClient();
+                    String json = String.format("{\"mac\":\"%s\",\"image\":\"%s\"}", macAddress, base64Image);
 
-                    System.out.println("📸 Frame sent: " + base64Image.length() + " chars");
+                    java.net.http.HttpRequest request = java.net.http.HttpRequest.newBuilder()
+                            .uri(java.net.URI.create("http://localhost:8080/api/frames/upload"))
+                            .header("Content-Type", "application/json")
+                            .POST(java.net.http.HttpRequest.BodyPublishers.ofString(json))
+                            .build();
+
+                    client.sendAsync(request, java.net.http.HttpResponse.BodyHandlers.ofString())
+                            .thenAccept(response -> {
+                                if (response.statusCode() == 200) {
+                                    System.out.println("📸 Frame uploaded via HTTP: " + base64Image.length() + " chars");
+                                } else {
+                                    System.err.println("✗ HTTP error: " + response.statusCode());
+                                }
+                            });
+
                 } catch (Exception e) {
-                    System.err.println("✗ Error sending frame: " + e.getMessage());
+                    System.err.println("✗ Error sending frame via HTTP: " + e.getMessage());
                 }
             }
-        }, 0, 200); // 200 мс = 5 кадров в секунду
+        }, 0, 200);
     }
 
     @Override
