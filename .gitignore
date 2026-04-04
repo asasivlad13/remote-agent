@@ -1,0 +1,16 @@
+# Compiled files
+*.class
+target/
+
+# IDE files
+.idea/
+*.iml
+*.iws
+*.ipr
+
+# Logs
+*.log
+
+# OS files
+.DS_Store
+Thumbs.db
