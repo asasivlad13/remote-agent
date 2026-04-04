@@ -20,14 +20,15 @@ public class ScreenCapture {
     public String captureAsBase64() throws IOException {
         BufferedImage image = robot.createScreenCapture(screenRect);
 
-        // Уменьшаем до 320x240
-        int newWidth = 320;
-        int newHeight = 240;
+        // Увеличиваем размер до 1024x768 (вместо 320x240)
+        int newWidth = 1024;
+        int newHeight = 768;
         BufferedImage scaledImage = new BufferedImage(newWidth, newHeight, BufferedImage.TYPE_INT_RGB);
         Graphics2D g = scaledImage.createGraphics();
         g.drawImage(image, 0, 0, newWidth, newHeight, null);
         g.dispose();
 
+        // Увеличиваем качество JPEG (настройка не поддерживается напрямую, но размер будет больше)
         ByteArrayOutputStream baos = new ByteArrayOutputStream();
         ImageIO.write(scaledImage, "jpg", baos);
         baos.flush();

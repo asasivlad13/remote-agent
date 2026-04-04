@@ -1,9 +1,11 @@
 package com.agent;
 
+import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import org.java_websocket.client.WebSocketClient;
 import org.java_websocket.handshake.ServerHandshake;
 
+import java.awt.Robot;
 import java.net.URI;
 import java.util.HashMap;
 import java.util.Map;
@@ -19,6 +21,7 @@ public class AgentWebSocketClient extends WebSocketClient {
     private Timer heartbeatTimer;
     private Timer screenTimer;
     private ScreenCapture screenCapture;
+    private Robot robot;
 
     public AgentWebSocketClient(String serverUrl, String pcName, String macAddress, String token) {
         super(URI.create(serverUrl));
@@ -31,12 +34,14 @@ public class AgentWebSocketClient extends WebSocketClient {
     public void onOpen(ServerHandshake handshake) {
         System.out.println("✓ Connected to WebSocket server");
 
-        // Инициализируем захват экрана
         try {
             screenCapture = new ScreenCapture();
             System.out.println("✓ Screen capture ready");
+
+            robot = new Robot();
+            System.out.println("✓ Robot initialized");
         } catch (Exception e) {
-            System.err.println("✗ Failed to init screen capture: " + e.getMessage());
+            System.err.println("✗ Failed to init: " + e.getMessage());
         }
 
         sendRegistration();
@@ -88,7 +93,6 @@ public class AgentWebSocketClient extends WebSocketClient {
                 try {
                     String base64Image = screenCapture.captureAsBase64();
 
-                    // Отправляем через HTTP POST
                     java.net.http.HttpClient client = java.net.http.HttpClient.newHttpClient();
                     String json = String.format("{\"mac\":\"%s\",\"image\":\"%s\"}", macAddress, base64Image);
 
@@ -101,22 +105,58 @@ public class AgentWebSocketClient extends WebSocketClient {
                     client.sendAsync(request, java.net.http.HttpResponse.BodyHandlers.ofString())
                             .thenAccept(response -> {
                                 if (response.statusCode() == 200) {
-                                    System.out.println("📸 Frame uploaded via HTTP: " + base64Image.length() + " chars");
-                                } else {
-                                    System.err.println("✗ HTTP error: " + response.statusCode());
+                                    System.out.println("📸 Frame uploaded: " + base64Image.length() + " chars");
                                 }
                             });
 
                 } catch (Exception e) {
-                    System.err.println("✗ Error sending frame via HTTP: " + e.getMessage());
+                    System.err.println("✗ Error sending frame: " + e.getMessage());
                 }
             }
-        }, 0, 200);
+        }, 0, 66); // 66 мс ≈ 15 FPS
     }
 
     @Override
     public void onMessage(String message) {
-        System.out.println("← Received: " + message);
+        System.out.println("← Received command: " + message);
+
+        try {
+            JsonNode json = mapper.readTree(message);
+            String type = json.get("type").asText();
+
+            if ("command".equals(type)) {
+                String action = json.get("action").asText();
+
+                switch (action) {
+                    case "MOUSE_MOVE":
+                        int x = json.get("x").asInt();
+                        int y = json.get("y").asInt();
+                        robot.mouseMove(x, y);
+                        System.out.println("  → Mouse moved to (" + x + ", " + y + ")");
+                        break;
+
+                    case "MOUSE_CLICK":
+                        int button = json.get("button").asInt();
+                        robot.mousePress(button);
+                        Thread.sleep(50);
+                        robot.mouseRelease(button);
+                        System.out.println("  → Mouse clicked button " + button);
+                        break;
+
+                    case "KEY_PRESS":
+                        int keyCode = json.get("keyCode").asInt();
+                        robot.keyPress(keyCode);
+                        robot.keyRelease(keyCode);
+                        System.out.println("  → Key pressed: " + keyCode);
+                        break;
+
+                    default:
+                        System.out.println("  → Unknown action: " + action);
+                }
+            }
+        } catch (Exception e) {
+            System.err.println("✗ Error executing command: " + e.getMessage());
+        }
     }
 
     @Override
