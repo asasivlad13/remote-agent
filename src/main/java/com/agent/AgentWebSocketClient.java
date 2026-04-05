@@ -147,17 +147,14 @@ public class AgentWebSocketClient extends WebSocketClient {
                     case "KEY_PRESS":
                         int keyCode = json.get("keyCode").asInt();
 
-                        // Нажимаем модификаторы
                         if (json.has("ctrl") && json.get("ctrl").asBoolean()) robot.keyPress(KeyEvent.VK_CONTROL);
                         if (json.has("alt") && json.get("alt").asBoolean()) robot.keyPress(KeyEvent.VK_ALT);
                         if (json.has("shift") && json.get("shift").asBoolean()) robot.keyPress(KeyEvent.VK_SHIFT);
 
-                        // Нажимаем основную клавишу
                         robot.keyPress(keyCode);
                         Thread.sleep(20);
                         robot.keyRelease(keyCode);
 
-                        // Отпускаем модификаторы
                         if (json.has("shift") && json.get("shift").asBoolean()) robot.keyRelease(KeyEvent.VK_SHIFT);
                         if (json.has("alt") && json.get("alt").asBoolean()) robot.keyRelease(KeyEvent.VK_ALT);
                         if (json.has("ctrl") && json.get("ctrl").asBoolean()) robot.keyRelease(KeyEvent.VK_CONTROL);
@@ -172,7 +169,6 @@ public class AgentWebSocketClient extends WebSocketClient {
                         break;
 
                     case "KEY_COMBO":
-                        // Для специальных комбинаций
                         robot.keyPress(KeyEvent.VK_CONTROL);
                         robot.keyPress(KeyEvent.VK_ALT);
                         robot.keyPress(KeyEvent.VK_DELETE);
@@ -205,6 +201,19 @@ public class AgentWebSocketClient extends WebSocketClient {
                 startScreenCaptureWithInterval(intervalMs);
 
                 System.out.println("Settings applied: " + resolution + "p, " + fps + " FPS");
+            } else if ("notification".equals(type)) {
+                String msg = json.get("message").asText();
+                System.out.println("🔔 NOTIFICATION: " + msg);
+                try {
+                    String os = System.getProperty("os.name").toLowerCase();
+                    if (os.contains("win")) {
+                        Runtime.getRuntime().exec("msg %username% /TIME:5 \"Remote PC: " + msg + "\"");
+                    } else if (os.contains("linux") || os.contains("mac")) {
+                        Runtime.getRuntime().exec(new String[]{"notify-send", "Remote PC", msg});
+                    }
+                } catch (Exception e) {
+                    System.err.println("Could not show notification: " + e.getMessage());
+                }
             }
         } catch (Exception e) {
             System.err.println("✗ Error processing message: " + e.getMessage());
