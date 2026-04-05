@@ -6,6 +6,7 @@ import org.java_websocket.client.WebSocketClient;
 import org.java_websocket.handshake.ServerHandshake;
 
 import java.awt.Robot;
+import java.awt.event.KeyEvent;
 import java.net.URI;
 import java.util.HashMap;
 import java.util.Map;
@@ -85,36 +86,30 @@ public class AgentWebSocketClient extends WebSocketClient {
 
     private void startScreenCapture() {
         if (screenCapture == null) return;
-        startScreenCaptureWithInterval(66); // 66 мс ≈ 15 FPS по умолчанию
+        startScreenCaptureWithInterval(66);
     }
 
     private void startScreenCaptureWithInterval(int intervalMs) {
-        if (screenTimer != null) {
-            screenTimer.cancel();
-        }
+        if (screenTimer != null) screenTimer.cancel();
         screenTimer = new Timer(true);
         screenTimer.scheduleAtFixedRate(new TimerTask() {
             @Override
             public void run() {
                 try {
                     String base64Image = screenCapture.captureAsBase64();
-
                     java.net.http.HttpClient client = java.net.http.HttpClient.newHttpClient();
                     String json = String.format("{\"mac\":\"%s\",\"image\":\"%s\"}", macAddress, base64Image);
-
                     java.net.http.HttpRequest request = java.net.http.HttpRequest.newBuilder()
                             .uri(java.net.URI.create("http://localhost:8080/api/frames/upload"))
                             .header("Content-Type", "application/json")
                             .POST(java.net.http.HttpRequest.BodyPublishers.ofString(json))
                             .build();
-
                     client.sendAsync(request, java.net.http.HttpResponse.BodyHandlers.ofString())
                             .thenAccept(response -> {
                                 if (response.statusCode() == 200) {
                                     System.out.println("📸 Frame uploaded: " + base64Image.length() + " chars");
                                 }
                             });
-
                 } catch (Exception e) {
                     System.err.println("✗ Error sending frame: " + e.getMessage());
                 }
@@ -151,9 +146,41 @@ public class AgentWebSocketClient extends WebSocketClient {
 
                     case "KEY_PRESS":
                         int keyCode = json.get("keyCode").asInt();
+
+                        // Нажимаем модификаторы
+                        if (json.has("ctrl") && json.get("ctrl").asBoolean()) robot.keyPress(KeyEvent.VK_CONTROL);
+                        if (json.has("alt") && json.get("alt").asBoolean()) robot.keyPress(KeyEvent.VK_ALT);
+                        if (json.has("shift") && json.get("shift").asBoolean()) robot.keyPress(KeyEvent.VK_SHIFT);
+
+                        // Нажимаем основную клавишу
                         robot.keyPress(keyCode);
+                        Thread.sleep(20);
                         robot.keyRelease(keyCode);
+
+                        // Отпускаем модификаторы
+                        if (json.has("shift") && json.get("shift").asBoolean()) robot.keyRelease(KeyEvent.VK_SHIFT);
+                        if (json.has("alt") && json.get("alt").asBoolean()) robot.keyRelease(KeyEvent.VK_ALT);
+                        if (json.has("ctrl") && json.get("ctrl").asBoolean()) robot.keyRelease(KeyEvent.VK_CONTROL);
+
                         System.out.println("  → Key pressed: " + keyCode);
+                        break;
+
+                    case "KEY_RELEASE":
+                        int releaseCode = json.get("keyCode").asInt();
+                        robot.keyRelease(releaseCode);
+                        System.out.println("  → Key released: " + releaseCode);
+                        break;
+
+                    case "KEY_COMBO":
+                        // Для специальных комбинаций
+                        robot.keyPress(KeyEvent.VK_CONTROL);
+                        robot.keyPress(KeyEvent.VK_ALT);
+                        robot.keyPress(KeyEvent.VK_DELETE);
+                        Thread.sleep(50);
+                        robot.keyRelease(KeyEvent.VK_DELETE);
+                        robot.keyRelease(KeyEvent.VK_ALT);
+                        robot.keyRelease(KeyEvent.VK_CONTROL);
+                        System.out.println("  → Combo: Ctrl+Alt+Del");
                         break;
 
                     default:
@@ -163,7 +190,6 @@ public class AgentWebSocketClient extends WebSocketClient {
                 String resolution = json.get("resolution").asText();
                 int fps = json.get("fps").asInt();
 
-                // Устанавливаем разрешение
                 int width, height;
                 switch (resolution) {
                     case "360": width = 640; height = 360; break;
@@ -175,7 +201,6 @@ public class AgentWebSocketClient extends WebSocketClient {
                 }
                 screenCapture.setResolution(width, height);
 
-                // Изменяем интервал отправки кадров
                 int intervalMs = 1000 / fps;
                 startScreenCaptureWithInterval(intervalMs);
 
