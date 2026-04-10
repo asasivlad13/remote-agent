@@ -43,6 +43,7 @@ public class AgentWebSocketClient extends WebSocketClient {
             System.out.println("✓ Robot initialized");
         } catch (Exception e) {
             System.err.println("✗ Failed to init: " + e.getMessage());
+            e.printStackTrace();
         }
 
         sendRegistration();
@@ -63,6 +64,7 @@ public class AgentWebSocketClient extends WebSocketClient {
             System.out.println("✓ Registration sent: " + pcName + " (" + macAddress + ")");
         } catch (Exception e) {
             System.err.println("✗ Error sending registration: " + e.getMessage());
+            e.printStackTrace();
         }
     }
 
@@ -79,6 +81,7 @@ public class AgentWebSocketClient extends WebSocketClient {
                     System.out.println("♥ Heartbeat sent");
                 } catch (Exception e) {
                     System.err.println("✗ Error sending heartbeat: " + e.getMessage());
+                    e.printStackTrace();
                 }
             }
         }, 10000, 10000);
@@ -97,21 +100,26 @@ public class AgentWebSocketClient extends WebSocketClient {
             public void run() {
                 try {
                     String base64Image = screenCapture.captureAsBase64();
+
                     java.net.http.HttpClient client = java.net.http.HttpClient.newHttpClient();
                     String json = String.format("{\"mac\":\"%s\",\"image\":\"%s\"}", macAddress, base64Image);
+
                     java.net.http.HttpRequest request = java.net.http.HttpRequest.newBuilder()
                             .uri(java.net.URI.create("http://localhost:8080/api/frames/upload"))
                             .header("Content-Type", "application/json")
                             .POST(java.net.http.HttpRequest.BodyPublishers.ofString(json))
                             .build();
+
                     client.sendAsync(request, java.net.http.HttpResponse.BodyHandlers.ofString())
                             .thenAccept(response -> {
                                 if (response.statusCode() == 200) {
                                     System.out.println("📸 Frame uploaded: " + base64Image.length() + " chars");
                                 }
                             });
+
                 } catch (Exception e) {
                     System.err.println("✗ Error sending frame: " + e.getMessage());
+                    e.printStackTrace();
                 }
             }
         }, 0, intervalMs);
@@ -123,6 +131,19 @@ public class AgentWebSocketClient extends WebSocketClient {
 
         try {
             JsonNode json = mapper.readTree(message);
+
+            // Обработка сообщения со статусом (без поля type)
+            if (json.has("status")) {
+                String status = json.get("status").asText();
+                System.out.println("✓ Server status: " + status);
+                return;
+            }
+
+            if (!json.has("type")) {
+                System.out.println("  → Message has no type field, skipping");
+                return;
+            }
+
             String type = json.get("type").asText();
 
             if ("command".equals(type)) {
@@ -204,19 +225,29 @@ public class AgentWebSocketClient extends WebSocketClient {
             } else if ("notification".equals(type)) {
                 String msg = json.get("message").asText();
                 System.out.println("🔔 NOTIFICATION: " + msg);
+
                 try {
                     String os = System.getProperty("os.name").toLowerCase();
                     if (os.contains("win")) {
-                        Runtime.getRuntime().exec("msg %username% /TIME:5 \"Remote PC: " + msg + "\"");
+                        String psCommand = "powershell.exe -Command \"& {Add-Type -AssemblyName System.Windows.Forms; " +
+                                "$notification = New-Object System.Windows.Forms.NotifyIcon; " +
+                                "$notification.Icon = [System.Drawing.Icon]::ExtractAssociatedIcon((Get-Process -Id $pid).Path); " +
+                                "$notification.BalloonTipTitle = 'Remote PC'; " +
+                                "$notification.BalloonTipText = '" + msg + "'; " +
+                                "$notification.Visible = $true; " +
+                                "$notification.ShowBalloonTip(5000)}\"";
+                        Runtime.getRuntime().exec(psCommand);
                     } else if (os.contains("linux") || os.contains("mac")) {
                         Runtime.getRuntime().exec(new String[]{"notify-send", "Remote PC", msg});
                     }
                 } catch (Exception e) {
                     System.err.println("Could not show notification: " + e.getMessage());
+                    e.printStackTrace();
                 }
             }
         } catch (Exception e) {
             System.err.println("✗ Error processing message: " + e.getMessage());
+            e.printStackTrace();
         }
     }
 
@@ -230,5 +261,6 @@ public class AgentWebSocketClient extends WebSocketClient {
     @Override
     public void onError(Exception ex) {
         System.err.println("✗ WebSocket error: " + ex.getMessage());
+        ex.printStackTrace();
     }
 }

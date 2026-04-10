@@ -93,22 +93,38 @@ public class AgentApplication {
     }
 
     private static String getMacAddress() {
-        try {
-            java.net.NetworkInterface networkInterface =
-                    java.net.NetworkInterface.getNetworkInterfaces().nextElement();
-            byte[] mac = networkInterface.getHardwareAddress();
+        // Сначала пробуем взять из конфига
+        String macFromConfig = System.getProperty("pc.mac");
+        if (macFromConfig != null && !macFromConfig.isEmpty()) {
+            System.out.println("  Using MAC from config: " + macFromConfig);
+            return macFromConfig;
+        }
 
-            if (mac != null) {
-                StringBuilder sb = new StringBuilder();
-                for (int i = 0; i < mac.length; i++) {
-                    sb.append(String.format("%02X", mac[i]));
-                    if (i < mac.length - 1) sb.append(":");
+        // Если нет — определяем автоматически
+        try {
+            java.util.Enumeration<java.net.NetworkInterface> interfaces =
+                    java.net.NetworkInterface.getNetworkInterfaces();
+            while (interfaces.hasMoreElements()) {
+                java.net.NetworkInterface ni = interfaces.nextElement();
+                byte[] mac = ni.getHardwareAddress();
+                if (mac != null && mac.length == 6) {
+                    StringBuilder sb = new StringBuilder();
+                    for (byte b : mac) {
+                        sb.append(String.format("%02X", b)).append(":");
+                    }
+                    if (sb.length() > 0) sb.setLength(sb.length() - 1);
+                    String detectedMac = sb.toString();
+                    if (!detectedMac.equals("00:00:00:00:00:00")) {
+                        System.out.println("  Auto-detected MAC: " + detectedMac);
+                        return detectedMac;
+                    }
                 }
-                return sb.toString();
             }
         } catch (Exception e) {
-            System.err.println("Warning: Could not get MAC, using default");
+            System.err.println("Could not get MAC: " + e.getMessage());
         }
+
+        System.out.println("  Using fallback MAC: AA:BB:CC:DD:EE:FF");
         return "AA:BB:CC:DD:EE:FF";
     }
 
