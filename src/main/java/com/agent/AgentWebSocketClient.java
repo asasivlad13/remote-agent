@@ -16,6 +16,8 @@ import java.util.TimerTask;
 
 public class AgentWebSocketClient extends WebSocketClient {
 
+    private boolean useWebP = true;
+
     private final String pcName;
     private final String macAddress;
     private final String token;
