@@ -6,6 +6,7 @@ import org.java_websocket.client.WebSocketClient;
 import org.java_websocket.handshake.ServerHandshake;
 
 import java.awt.Robot;
+import java.awt.event.InputEvent;
 import java.awt.event.KeyEvent;
 import java.net.URI;
 import java.util.HashMap;
@@ -53,15 +54,19 @@ public class AgentWebSocketClient extends WebSocketClient {
 
     private void sendRegistration() {
         try {
-            Map<String, String> msg = new HashMap<>();
+            Map<String, Object> msg = new HashMap<>();
             msg.put("type", "register");
             msg.put("pcName", pcName);
             msg.put("mac", macAddress);
             msg.put("token", token);
 
+            java.awt.Dimension screenSize = java.awt.Toolkit.getDefaultToolkit().getScreenSize();
+            msg.put("screenWidth", screenSize.width);
+            msg.put("screenHeight", screenSize.height);
+
             String json = mapper.writeValueAsString(msg);
             send(json);
-            System.out.println("✓ Registration sent: " + pcName + " (" + macAddress + ")");
+            System.out.println("✓ Registration sent: " + pcName + " (" + macAddress + ") screen: " + screenSize.width + "x" + screenSize.height);
         } catch (Exception e) {
             System.err.println("✗ Error sending registration: " + e.getMessage());
             e.printStackTrace();
@@ -89,7 +94,7 @@ public class AgentWebSocketClient extends WebSocketClient {
 
     private void startScreenCapture() {
         if (screenCapture == null) return;
-        startScreenCaptureWithInterval(66);
+        startScreenCaptureWithInterval(16); // 16ms = 60 FPS
     }
 
     private void startScreenCaptureWithInterval(int intervalMs) {
@@ -113,7 +118,8 @@ public class AgentWebSocketClient extends WebSocketClient {
                     client.sendAsync(request, java.net.http.HttpResponse.BodyHandlers.ofString())
                             .thenAccept(response -> {
                                 if (response.statusCode() == 200) {
-                                    System.out.println("📸 Frame uploaded: " + base64Image.length() + " chars");
+                                    // Оптимизация: не выводим каждый кадр
+                                    // System.out.println("📸 Frame uploaded: " + base64Image.length() + " chars");
                                 }
                             });
 
@@ -132,7 +138,6 @@ public class AgentWebSocketClient extends WebSocketClient {
         try {
             JsonNode json = mapper.readTree(message);
 
-            // Обработка сообщения со статусом (без поля type)
             if (json.has("status")) {
                 String status = json.get("status").asText();
                 System.out.println("✓ Server status: " + status);
@@ -147,46 +152,71 @@ public class AgentWebSocketClient extends WebSocketClient {
             String type = json.get("type").asText();
 
             if ("command".equals(type)) {
+                if (!json.has("action")) {
+                    System.out.println("  → Command has no action field");
+                    return;
+                }
                 String action = json.get("action").asText();
 
                 switch (action) {
                     case "MOUSE_MOVE":
-                        int x = json.get("x").asInt();
-                        int y = json.get("y").asInt();
-                        robot.mouseMove(x, y);
-                        System.out.println("  → Mouse moved to (" + x + ", " + y + ")");
+                        if (json.has("x") && json.has("y")) {
+                            int x = json.get("x").asInt();
+                            int y = json.get("y").asInt();
+                            robot.mouseMove(x, y);
+                            System.out.println("  → Mouse moved to (" + x + ", " + y + ")");
+                        }
                         break;
 
                     case "MOUSE_CLICK":
-                        int button = json.get("button").asInt();
-                        robot.mousePress(button);
+                        int button = json.has("button") ? json.get("button").asInt() : 1;
+                        int javaButton;
+                        switch (button) {
+                            case 1: javaButton = InputEvent.BUTTON1_DOWN_MASK; break;
+                            case 2: javaButton = InputEvent.BUTTON2_DOWN_MASK; break;
+                            case 3: javaButton = InputEvent.BUTTON3_DOWN_MASK; break;
+                            default: javaButton = InputEvent.BUTTON1_DOWN_MASK;
+                        }
+                        robot.mousePress(javaButton);
                         Thread.sleep(50);
-                        robot.mouseRelease(button);
+                        robot.mouseRelease(javaButton);
                         System.out.println("  → Mouse clicked button " + button);
                         break;
 
+                    case "MOUSE_WHEEL":
+                        if (json.has("delta")) {
+                            int delta = json.get("delta").asInt();
+                            robot.mouseWheel(delta);
+                            System.out.println("  → Mouse wheel: " + delta);
+                        }
+                        break;
+
                     case "KEY_PRESS":
-                        int keyCode = json.get("keyCode").asInt();
+                        if (json.has("keyCode")) {
+                            int keyCode = json.get("keyCode").asInt();
 
-                        if (json.has("ctrl") && json.get("ctrl").asBoolean()) robot.keyPress(KeyEvent.VK_CONTROL);
-                        if (json.has("alt") && json.get("alt").asBoolean()) robot.keyPress(KeyEvent.VK_ALT);
-                        if (json.has("shift") && json.get("shift").asBoolean()) robot.keyPress(KeyEvent.VK_SHIFT);
+                            if (json.has("ctrl") && json.get("ctrl").asBoolean()) robot.keyPress(KeyEvent.VK_CONTROL);
+                            if (json.has("alt") && json.get("alt").asBoolean()) robot.keyPress(KeyEvent.VK_ALT);
+                            if (json.has("shift") && json.get("shift").asBoolean()) robot.keyPress(KeyEvent.VK_SHIFT);
 
-                        robot.keyPress(keyCode);
-                        Thread.sleep(20);
-                        robot.keyRelease(keyCode);
+                            robot.keyPress(keyCode);
+                            Thread.sleep(20);
+                            robot.keyRelease(keyCode);
 
-                        if (json.has("shift") && json.get("shift").asBoolean()) robot.keyRelease(KeyEvent.VK_SHIFT);
-                        if (json.has("alt") && json.get("alt").asBoolean()) robot.keyRelease(KeyEvent.VK_ALT);
-                        if (json.has("ctrl") && json.get("ctrl").asBoolean()) robot.keyRelease(KeyEvent.VK_CONTROL);
+                            if (json.has("shift") && json.get("shift").asBoolean()) robot.keyRelease(KeyEvent.VK_SHIFT);
+                            if (json.has("alt") && json.get("alt").asBoolean()) robot.keyRelease(KeyEvent.VK_ALT);
+                            if (json.has("ctrl") && json.get("ctrl").asBoolean()) robot.keyRelease(KeyEvent.VK_CONTROL);
 
-                        System.out.println("  → Key pressed: " + keyCode);
+                            System.out.println("  → Key pressed: " + keyCode);
+                        }
                         break;
 
                     case "KEY_RELEASE":
-                        int releaseCode = json.get("keyCode").asInt();
-                        robot.keyRelease(releaseCode);
-                        System.out.println("  → Key released: " + releaseCode);
+                        if (json.has("keyCode")) {
+                            int releaseCode = json.get("keyCode").asInt();
+                            robot.keyRelease(releaseCode);
+                            System.out.println("  → Key released: " + releaseCode);
+                        }
                         break;
 
                     case "KEY_COMBO":
@@ -204,26 +234,29 @@ public class AgentWebSocketClient extends WebSocketClient {
                         System.out.println("  → Unknown action: " + action);
                 }
             } else if ("settings".equals(type)) {
-                String resolution = json.get("resolution").asText();
-                int fps = json.get("fps").asInt();
+                if (json.has("resolution") && json.has("fps")) {
+                    String resolution = json.get("resolution").asText();
+                    int fps = json.get("fps").asInt();
 
-                int width, height;
-                switch (resolution) {
-                    case "360": width = 640; height = 360; break;
-                    case "480": width = 854; height = 480; break;
-                    case "720": width = 1280; height = 720; break;
-                    case "1080": width = 1920; height = 1080; break;
-                    case "1440": width = 2560; height = 1440; break;
-                    default: width = 1280; height = 720;
+                    int width, height;
+                    switch (resolution) {
+                        case "360": width = 640; height = 360; break;
+                        case "480": width = 854; height = 480; break;
+                        case "720": width = 1280; height = 720; break;
+                        case "1080": width = 1920; height = 1080; break;
+                        case "1440": width = 2560; height = 1440; break;
+                        case "2160": width = 3840; height = 2160; break;
+                        default: width = 1280; height = 720;
+                    }
+                    screenCapture.setResolution(width, height);
+
+                    int intervalMs = 1000 / fps;
+                    startScreenCaptureWithInterval(intervalMs);
+
+                    System.out.println("Settings applied: " + resolution + "p, " + fps + " FPS");
                 }
-                screenCapture.setResolution(width, height);
-
-                int intervalMs = 1000 / fps;
-                startScreenCaptureWithInterval(intervalMs);
-
-                System.out.println("Settings applied: " + resolution + "p, " + fps + " FPS");
             } else if ("notification".equals(type)) {
-                String msg = json.get("message").asText();
+                String msg = json.has("message") ? json.get("message").asText() : "Unknown notification";
                 System.out.println("🔔 NOTIFICATION: " + msg);
 
                 try {
