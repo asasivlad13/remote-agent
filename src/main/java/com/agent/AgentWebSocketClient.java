@@ -16,22 +16,30 @@ import java.util.TimerTask;
 
 public class AgentWebSocketClient extends WebSocketClient {
 
-    private boolean useWebP = true;
-
     private final String pcName;
     private final String macAddress;
     private final String token;
+    private final String webrtcUrl;
+    private final String streamName;
+    private ScreenInfo screenInfo;
+
     private final ObjectMapper mapper = new ObjectMapper();
     private Timer heartbeatTimer;
-    private Timer screenTimer;
-    private ScreenCapture screenCapture;
     private Robot robot;
 
-    public AgentWebSocketClient(String serverUrl, String pcName, String macAddress, String token) {
+
+    public AgentWebSocketClient(String serverUrl,
+                                String pcName,
+                                String macAddress,
+                                String token,
+                                String webrtcUrl,
+                                String streamName) {
         super(URI.create(serverUrl));
         this.pcName = pcName;
         this.macAddress = macAddress;
         this.token = token;
+        this.webrtcUrl = webrtcUrl;
+        this.streamName = streamName;
     }
 
     @Override
@@ -39,19 +47,21 @@ public class AgentWebSocketClient extends WebSocketClient {
         System.out.println("✓ Connected to WebSocket server");
 
         try {
-            screenCapture = new ScreenCapture();
-            System.out.println("✓ Screen capture ready");
-
             robot = new Robot();
+            screenInfo = ScreenInfo.detect();
+
             System.out.println("✓ Robot initialized");
+            System.out.println("✓ Screen info detected: " + screenInfo);
+
+            screenInfo = ScreenInfo.detect();
+            System.out.println("✓ Screen info detected: " + screenInfo);
         } catch (Exception e) {
-            System.err.println("✗ Failed to init: " + e.getMessage());
+            System.err.println("✗ Failed to init Robot/ScreenInfo: " + e.getMessage());
             e.printStackTrace();
         }
 
         sendRegistration();
         startHeartbeat();
-        startScreenCapture();
     }
 
     private void sendRegistration() {
@@ -62,13 +72,30 @@ public class AgentWebSocketClient extends WebSocketClient {
             msg.put("mac", macAddress);
             msg.put("token", token);
 
-            java.awt.Dimension screenSize = java.awt.Toolkit.getDefaultToolkit().getScreenSize();
-            msg.put("screenWidth", screenSize.width);
-            msg.put("screenHeight", screenSize.height);
+            if (screenInfo != null) {
+                msg.put("screenWidth", screenInfo.getPhysicalWidth());
+                msg.put("screenHeight", screenInfo.getPhysicalHeight());
+                msg.put("scaleX", screenInfo.getScaleX());
+                msg.put("scaleY", screenInfo.getScaleY());
+            } else {
+                java.awt.Dimension screenSize = java.awt.Toolkit.getDefaultToolkit().getScreenSize();
+                msg.put("screenWidth", screenSize.width);
+                msg.put("screenHeight", screenSize.height);
+                msg.put("scaleX", 1.0);
+                msg.put("scaleY", 1.0);
+            }
+
+            msg.put("webrtcUrl", webrtcUrl);
+            msg.put("streamName", streamName);
 
             String json = mapper.writeValueAsString(msg);
             send(json);
-            System.out.println("✓ Registration sent: " + pcName + " (" + macAddress + ") screen: " + screenSize.width + "x" + screenSize.height);
+
+            System.out.println("✓ Registration sent: " + pcName + " (" + macAddress + ")");
+            System.out.println("  Physical screen: " + msg.get("screenWidth") + "x" + msg.get("screenHeight"));
+            System.out.println("  WebRTC URL: " + webrtcUrl);
+            System.out.println("  Stream name: " + streamName);
+
         } catch (Exception e) {
             System.err.println("✗ Error sending registration: " + e.getMessage());
             e.printStackTrace();
@@ -94,43 +121,14 @@ public class AgentWebSocketClient extends WebSocketClient {
         }, 10000, 10000);
     }
 
-    private void startScreenCapture() {
-        if (screenCapture == null) return;
-        startScreenCaptureWithInterval(16); // 16ms = 60 FPS
+    private int toRobotX(int xFromBrowser) {
+        if (screenInfo == null) return xFromBrowser;
+        return Math.max(0, Math.min(xFromBrowser, screenInfo.getPhysicalWidth() - 1));
     }
 
-    private void startScreenCaptureWithInterval(int intervalMs) {
-        if (screenTimer != null) screenTimer.cancel();
-        screenTimer = new Timer(true);
-        screenTimer.scheduleAtFixedRate(new TimerTask() {
-            @Override
-            public void run() {
-                try {
-                    String base64Image = screenCapture.captureAsBase64();
-
-                    java.net.http.HttpClient client = java.net.http.HttpClient.newHttpClient();
-                    String json = String.format("{\"mac\":\"%s\",\"image\":\"%s\"}", macAddress, base64Image);
-
-                    java.net.http.HttpRequest request = java.net.http.HttpRequest.newBuilder()
-                            .uri(java.net.URI.create("http://localhost:8080/api/frames/upload"))
-                            .header("Content-Type", "application/json")
-                            .POST(java.net.http.HttpRequest.BodyPublishers.ofString(json))
-                            .build();
-
-                    client.sendAsync(request, java.net.http.HttpResponse.BodyHandlers.ofString())
-                            .thenAccept(response -> {
-                                if (response.statusCode() == 200) {
-                                    // Оптимизация: не выводим каждый кадр
-                                    // System.out.println("📸 Frame uploaded: " + base64Image.length() + " chars");
-                                }
-                            });
-
-                } catch (Exception e) {
-                    System.err.println("✗ Error sending frame: " + e.getMessage());
-                    e.printStackTrace();
-                }
-            }
-        }, 0, intervalMs);
+    private int toRobotY(int yFromBrowser) {
+        if (screenInfo == null) return yFromBrowser;
+        return Math.max(0, Math.min(yFromBrowser, screenInfo.getPhysicalHeight() - 1));
     }
 
     @Override
@@ -158,38 +156,63 @@ public class AgentWebSocketClient extends WebSocketClient {
                     System.out.println("  → Command has no action field");
                     return;
                 }
+
                 String action = json.get("action").asText();
 
                 switch (action) {
-                    case "MOUSE_MOVE":
-                        if (json.has("x") && json.has("y")) {
-                            int x = json.get("x").asInt();
-                            int y = json.get("y").asInt();
-                            robot.mouseMove(x, y);
-                            System.out.println("  → Mouse moved to (" + x + ", " + y + ")");
-                        }
-                        break;
+                    case "MOUSE_MOVE": {
+                        int physicalX = json.get("x").asInt();
+                        int physicalY = json.get("y").asInt();
 
-                    case "MOUSE_CLICK":
+                        int logicalX = screenInfo.toLogicalX(physicalX);
+                        int logicalY = screenInfo.toLogicalY(physicalY);
+
+                        logicalX = Math.max(0, Math.min(logicalX, screenInfo.getLogicalWidth() - 1));
+                        logicalY = Math.max(0, Math.min(logicalY, screenInfo.getLogicalHeight() - 1));
+
+                        robot.mouseMove(logicalX, logicalY);
+                        break;
+                    }
+
+                    case "MOUSE_CLICK": {
+                        // Берём координаты, если они есть
+                        int physicalX = json.has("x") ? json.get("x").asInt() : -1;
+                        int physicalY = json.has("y") ? json.get("y").asInt() : -1;
+
                         int button = json.has("button") ? json.get("button").asInt() : 1;
+
+                        // Если координаты пришли — двигаем мышь с учётом масштаба
+                        if (physicalX >= 0 && physicalY >= 0) {
+                            int logicalX = screenInfo.toLogicalX(physicalX);
+                            int logicalY = screenInfo.toLogicalY(physicalY);
+
+                            // защита от выхода за экран
+                            logicalX = Math.max(0, Math.min(logicalX, screenInfo.getLogicalWidth() - 1));
+                            logicalY = Math.max(0, Math.min(logicalY, screenInfo.getLogicalHeight() - 1));
+
+                            robot.mouseMove(logicalX, logicalY);
+                        }
+
+                        // Определяем кнопку
                         int javaButton;
                         switch (button) {
-                            case 1: javaButton = InputEvent.BUTTON1_DOWN_MASK; break;
-                            case 2: javaButton = InputEvent.BUTTON2_DOWN_MASK; break;
                             case 3: javaButton = InputEvent.BUTTON3_DOWN_MASK; break;
+                            case 2: javaButton = InputEvent.BUTTON2_DOWN_MASK; break;
                             default: javaButton = InputEvent.BUTTON1_DOWN_MASK;
                         }
+
+                        // Клик
                         robot.mousePress(javaButton);
                         Thread.sleep(50);
                         robot.mouseRelease(javaButton);
-                        System.out.println("  → Mouse clicked button " + button);
+
                         break;
+                    }
 
                     case "MOUSE_WHEEL":
                         if (json.has("delta")) {
                             int delta = json.get("delta").asInt();
                             robot.mouseWheel(delta);
-                            System.out.println("  → Mouse wheel: " + delta);
                         }
                         break;
 
@@ -208,8 +231,6 @@ public class AgentWebSocketClient extends WebSocketClient {
                             if (json.has("shift") && json.get("shift").asBoolean()) robot.keyRelease(KeyEvent.VK_SHIFT);
                             if (json.has("alt") && json.get("alt").asBoolean()) robot.keyRelease(KeyEvent.VK_ALT);
                             if (json.has("ctrl") && json.get("ctrl").asBoolean()) robot.keyRelease(KeyEvent.VK_CONTROL);
-
-                            System.out.println("  → Key pressed: " + keyCode);
                         }
                         break;
 
@@ -217,7 +238,6 @@ public class AgentWebSocketClient extends WebSocketClient {
                         if (json.has("keyCode")) {
                             int releaseCode = json.get("keyCode").asInt();
                             robot.keyRelease(releaseCode);
-                            System.out.println("  → Key released: " + releaseCode);
                         }
                         break;
 
@@ -229,34 +249,15 @@ public class AgentWebSocketClient extends WebSocketClient {
                         robot.keyRelease(KeyEvent.VK_DELETE);
                         robot.keyRelease(KeyEvent.VK_ALT);
                         robot.keyRelease(KeyEvent.VK_CONTROL);
-                        System.out.println("  → Combo: Ctrl+Alt+Del");
                         break;
 
                     default:
                         System.out.println("  → Unknown action: " + action);
                 }
+
             } else if ("settings".equals(type)) {
-                if (json.has("resolution") && json.has("fps")) {
-                    String resolution = json.get("resolution").asText();
-                    int fps = json.get("fps").asInt();
-
-                    int width, height;
-                    switch (resolution) {
-                        case "360": width = 640; height = 360; break;
-                        case "480": width = 854; height = 480; break;
-                        case "720": width = 1280; height = 720; break;
-                        case "1080": width = 1920; height = 1080; break;
-                        case "1440": width = 2560; height = 1440; break;
-                        case "2160": width = 3840; height = 2160; break;
-                        default: width = 1280; height = 720;
-                    }
-                    screenCapture.setResolution(width, height);
-
-                    int intervalMs = 1000 / fps;
-                    startScreenCaptureWithInterval(intervalMs);
-
-                    System.out.println("Settings applied: " + resolution + "p, " + fps + " FPS");
-                }
+                String resolution = json.has("resolution") ? json.get("resolution").asText() : "unknown";
+                System.out.println("Settings requested by client: " + resolution);
             } else if ("notification".equals(type)) {
                 String msg = json.has("message") ? json.get("message").asText() : "Unknown notification";
                 System.out.println("🔔 NOTIFICATION: " + msg);
@@ -290,7 +291,6 @@ public class AgentWebSocketClient extends WebSocketClient {
     public void onClose(int code, String reason, boolean remote) {
         System.out.println("✗ Connection closed: " + reason);
         if (heartbeatTimer != null) heartbeatTimer.cancel();
-        if (screenTimer != null) screenTimer.cancel();
     }
 
     @Override

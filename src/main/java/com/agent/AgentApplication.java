@@ -4,10 +4,12 @@ import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
 
 import java.io.InputStream;
+import java.io.InputStreamReader;
 import java.net.URI;
 import java.net.http.HttpClient;
 import java.net.http.HttpRequest;
 import java.net.http.HttpResponse;
+import java.nio.charset.StandardCharsets;
 import java.util.Properties;
 
 public class AgentApplication {
@@ -18,28 +20,67 @@ public class AgentApplication {
     private static String USERNAME;
     private static String PASSWORD;
 
+    private static boolean VIDEO_ENABLED;
+    private static String VIDEO_PUBLIC_URL;
+    private static String VIDEO_STREAM_NAME;
+
+    private static String GST_LAUNCH_PATH;
+    private static int GSTREAMER_HTTP_PORT;
+    private static int GSTREAMER_WEBRTC_PORT;
+    private static int GSTREAMER_WIDTH;
+    private static int GSTREAMER_HEIGHT;
+    private static int GSTREAMER_FPS;
+
     public static void main(String[] args) {
         System.out.println("=========================================");
-        System.out.println("     Remote PC Agent v1.0");
+        System.out.println("     Remote PC Agent v2.0");
         System.out.println("=========================================");
 
+        GStreamerManager gstreamerManager = null;
+
         try {
-            // 1. Загружаем конфигурацию
             loadConfig();
+
             System.out.println("✓ Config loaded");
             System.out.println("  Server WS: " + WS_URL);
             System.out.println("  PC Name: " + PC_NAME);
+            System.out.println("  Video enabled: " + VIDEO_ENABLED);
+            System.out.println("  Video public url: " + VIDEO_PUBLIC_URL);
+            System.out.println("  Video stream name: " + VIDEO_STREAM_NAME);
+            System.out.println("  gst-launch path: " + GST_LAUNCH_PATH);
+            System.out.println("  GStreamer HTTP port: " + GSTREAMER_HTTP_PORT);
+            System.out.println("  GStreamer WebRTC port: " + GSTREAMER_WEBRTC_PORT);
+            System.out.println("  GStreamer resolution: " + GSTREAMER_WIDTH + "x" + GSTREAMER_HEIGHT);
+            System.out.println("  GStreamer FPS: " + GSTREAMER_FPS);
 
-            // 2. Получаем MAC-адрес
             String macAddress = getMacAddress();
             System.out.println("✓ MAC Address: " + macAddress);
 
-            // 3. Получаем токен
             String token = getToken();
             System.out.println("✓ Token obtained");
 
-            // 4. Подключаемся к WebSocket
-            AgentWebSocketClient client = new AgentWebSocketClient(WS_URL, PC_NAME, macAddress, token);
+            if (VIDEO_ENABLED) {
+                gstreamerManager = new GStreamerManager(
+                        GST_LAUNCH_PATH,
+                        GSTREAMER_HTTP_PORT,
+                        GSTREAMER_WEBRTC_PORT,
+                        VIDEO_STREAM_NAME,
+                        GSTREAMER_WIDTH,
+                        GSTREAMER_HEIGHT,
+                        GSTREAMER_FPS
+                );
+                gstreamerManager.start();
+            }
+
+            AgentWebSocketClient client = new AgentWebSocketClient(
+                    WS_URL,
+                    PC_NAME,
+                    macAddress,
+                    token,
+                    VIDEO_PUBLIC_URL,
+                    VIDEO_STREAM_NAME
+            );
+
             client.connect();
 
             System.out.println("✓ Agent started successfully");
@@ -53,12 +94,12 @@ public class AgentApplication {
 
     private static void loadConfig() throws Exception {
         Properties props = new Properties();
-        try (InputStream input = AgentApplication.class.getClassLoader()
-                .getResourceAsStream("config.properties")) {
+
+        try (InputStream input = AgentApplication.class.getClassLoader().getResourceAsStream("config.properties")) {
             if (input == null) {
                 throw new RuntimeException("config.properties not found");
             }
-            props.load(input);
+            props.load(new InputStreamReader(input, StandardCharsets.UTF_8));
         }
 
         WS_URL = props.getProperty("server.ws.url");
@@ -66,6 +107,17 @@ public class AgentApplication {
         PC_NAME = props.getProperty("pc.name");
         USERNAME = props.getProperty("auth.username");
         PASSWORD = props.getProperty("auth.password");
+
+        VIDEO_ENABLED = Boolean.parseBoolean(props.getProperty("video.enabled", "true"));
+        VIDEO_PUBLIC_URL = props.getProperty("video.public.url", "http://127.0.0.1:8000");
+        VIDEO_STREAM_NAME = props.getProperty("video.stream.name", "desktop");
+
+        GST_LAUNCH_PATH = props.getProperty("gst.launch.path", "C:/gstreamer/1.0/msvc_x86_64/bin/gst-launch-1.0.exe");
+        GSTREAMER_HTTP_PORT = Integer.parseInt(props.getProperty("gstreamer.http.port", "8000"));
+        GSTREAMER_WEBRTC_PORT = Integer.parseInt(props.getProperty("gstreamer.webrtc.port", "8443"));
+        GSTREAMER_WIDTH = Integer.parseInt(props.getProperty("gstreamer.width", "1280"));
+        GSTREAMER_HEIGHT = Integer.parseInt(props.getProperty("gstreamer.height", "720"));
+        GSTREAMER_FPS = Integer.parseInt(props.getProperty("gstreamer.fps", "30"));
     }
 
     private static String getToken() throws Exception {
@@ -93,26 +145,27 @@ public class AgentApplication {
     }
 
     private static String getMacAddress() {
-        // Сначала пробуем взять из конфига
         String macFromConfig = System.getProperty("pc.mac");
         if (macFromConfig != null && !macFromConfig.isEmpty()) {
             System.out.println("  Using MAC from config: " + macFromConfig);
             return macFromConfig;
         }
 
-        // Если нет — определяем автоматически
         try {
             java.util.Enumeration<java.net.NetworkInterface> interfaces =
                     java.net.NetworkInterface.getNetworkInterfaces();
+
             while (interfaces.hasMoreElements()) {
                 java.net.NetworkInterface ni = interfaces.nextElement();
                 byte[] mac = ni.getHardwareAddress();
+
                 if (mac != null && mac.length == 6) {
                     StringBuilder sb = new StringBuilder();
                     for (byte b : mac) {
                         sb.append(String.format("%02X", b)).append(":");
                     }
                     if (sb.length() > 0) sb.setLength(sb.length() - 1);
+
                     String detectedMac = sb.toString();
                     if (!detectedMac.equals("00:00:00:00:00:00")) {
                         System.out.println("  Auto-detected MAC: " + detectedMac);
@@ -128,7 +181,6 @@ public class AgentApplication {
         return "AA:BB:CC:DD:EE:FF";
     }
 
-    // Вспомогательный класс для Map.of() в Java 9+
     private static class Map {
         static <K, V> java.util.Map<K, V> of(K k1, V v1, K k2, V v2) {
             java.util.Map<K, V> map = new java.util.HashMap<>();
