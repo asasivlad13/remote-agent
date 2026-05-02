@@ -110,7 +110,11 @@ public class AgentApplication {
 
         VIDEO_ENABLED = Boolean.parseBoolean(props.getProperty("video.enabled", "true"));
         VIDEO_PUBLIC_URL = props.getProperty("video.public.url", "http://127.0.0.1:8000");
-        VIDEO_STREAM_NAME = props.getProperty("video.stream.name", "desktop");
+
+        String baseStreamName = props.getProperty("video.stream.name", "desktop");
+        String macSafe = getMacAddress().replace(":", "").toLowerCase();
+
+        VIDEO_STREAM_NAME = baseStreamName + "_" + macSafe;
 
         GST_LAUNCH_PATH = props.getProperty("gst.launch.path", "C:/gstreamer/1.0/msvc_x86_64/bin/gst-launch-1.0.exe");
         GSTREAMER_HTTP_PORT = Integer.parseInt(props.getProperty("gstreamer.http.port", "8000"));
