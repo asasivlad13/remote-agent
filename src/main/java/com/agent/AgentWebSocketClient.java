@@ -27,7 +27,6 @@ public class AgentWebSocketClient extends WebSocketClient {
     private Timer heartbeatTimer;
     private Robot robot;
 
-
     public AgentWebSocketClient(String serverUrl,
                                 String pcName,
                                 String macAddress,
@@ -175,33 +174,33 @@ public class AgentWebSocketClient extends WebSocketClient {
                     }
 
                     case "MOUSE_CLICK": {
-                        // Берём координаты, если они есть
                         int physicalX = json.has("x") ? json.get("x").asInt() : -1;
                         int physicalY = json.has("y") ? json.get("y").asInt() : -1;
 
                         int button = json.has("button") ? json.get("button").asInt() : 1;
 
-                        // Если координаты пришли — двигаем мышь с учётом масштаба
                         if (physicalX >= 0 && physicalY >= 0) {
                             int logicalX = screenInfo.toLogicalX(physicalX);
                             int logicalY = screenInfo.toLogicalY(physicalY);
 
-                            // защита от выхода за экран
                             logicalX = Math.max(0, Math.min(logicalX, screenInfo.getLogicalWidth() - 1));
                             logicalY = Math.max(0, Math.min(logicalY, screenInfo.getLogicalHeight() - 1));
 
                             robot.mouseMove(logicalX, logicalY);
                         }
 
-                        // Определяем кнопку
                         int javaButton;
                         switch (button) {
-                            case 3: javaButton = InputEvent.BUTTON3_DOWN_MASK; break;
-                            case 2: javaButton = InputEvent.BUTTON2_DOWN_MASK; break;
-                            default: javaButton = InputEvent.BUTTON1_DOWN_MASK;
+                            case 3:
+                                javaButton = InputEvent.BUTTON3_DOWN_MASK;
+                                break;
+                            case 2:
+                                javaButton = InputEvent.BUTTON2_DOWN_MASK;
+                                break;
+                            default:
+                                javaButton = InputEvent.BUTTON1_DOWN_MASK;
                         }
 
-                        // Клик
                         robot.mousePress(javaButton);
                         Thread.sleep(50);
                         robot.mouseRelease(javaButton);
@@ -209,14 +208,15 @@ public class AgentWebSocketClient extends WebSocketClient {
                         break;
                     }
 
-                    case "MOUSE_WHEEL":
+                    case "MOUSE_WHEEL": {
                         if (json.has("delta")) {
                             int delta = json.get("delta").asInt();
                             robot.mouseWheel(delta);
                         }
                         break;
+                    }
 
-                    case "KEY_PRESS":
+                    case "KEY_PRESS": {
                         if (json.has("keyCode")) {
                             int keyCode = json.get("keyCode").asInt();
 
@@ -233,15 +233,17 @@ public class AgentWebSocketClient extends WebSocketClient {
                             if (json.has("ctrl") && json.get("ctrl").asBoolean()) robot.keyRelease(KeyEvent.VK_CONTROL);
                         }
                         break;
+                    }
 
-                    case "KEY_RELEASE":
+                    case "KEY_RELEASE": {
                         if (json.has("keyCode")) {
                             int releaseCode = json.get("keyCode").asInt();
                             robot.keyRelease(releaseCode);
                         }
                         break;
+                    }
 
-                    case "KEY_COMBO":
+                    case "KEY_COMBO": {
                         robot.keyPress(KeyEvent.VK_CONTROL);
                         robot.keyPress(KeyEvent.VK_ALT);
                         robot.keyPress(KeyEvent.VK_DELETE);
@@ -250,6 +252,33 @@ public class AgentWebSocketClient extends WebSocketClient {
                         robot.keyRelease(KeyEvent.VK_ALT);
                         robot.keyRelease(KeyEvent.VK_CONTROL);
                         break;
+                    }
+
+                    case "POWER_SLEEP": {
+                        System.out.println("Получена команда перевода ПК в сон");
+
+                        try {
+                            String os = System.getProperty("os.name").toLowerCase();
+
+                            if (os.contains("win")) {
+                                Runtime.getRuntime().exec(
+                                        "rundll32.exe powrprof.dll,SetSuspendState 0,1,0"
+                                );
+                            } else if (os.contains("linux")) {
+                                Runtime.getRuntime().exec("systemctl suspend");
+                            } else if (os.contains("mac")) {
+                                Runtime.getRuntime().exec("pmset sleepnow");
+                            } else {
+                                System.out.println("Операционная система не поддерживается для команды сна");
+                            }
+
+                        } catch (Exception e) {
+                            System.err.println("Ошибка перевода ПК в сон: " + e.getMessage());
+                            e.printStackTrace();
+                        }
+
+                        break;
+                    }
 
                     default:
                         System.out.println("  → Unknown action: " + action);
