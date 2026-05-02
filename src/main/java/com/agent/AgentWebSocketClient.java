@@ -51,9 +51,6 @@ public class AgentWebSocketClient extends WebSocketClient {
 
             System.out.println("✓ Robot initialized");
             System.out.println("✓ Screen info detected: " + screenInfo);
-
-            screenInfo = ScreenInfo.detect();
-            System.out.println("✓ Screen info detected: " + screenInfo);
         } catch (Exception e) {
             System.err.println("✗ Failed to init Robot/ScreenInfo: " + e.getMessage());
             e.printStackTrace();
@@ -120,14 +117,179 @@ public class AgentWebSocketClient extends WebSocketClient {
         }, 10000, 10000);
     }
 
-    private int toRobotX(int xFromBrowser) {
-        if (screenInfo == null) return xFromBrowser;
-        return Math.max(0, Math.min(xFromBrowser, screenInfo.getPhysicalWidth() - 1));
+    private void runCommand(String command) throws Exception {
+        new ProcessBuilder("cmd.exe", "/c", command)
+                .redirectErrorStream(true)
+                .start();
     }
 
-    private int toRobotY(int yFromBrowser) {
-        if (screenInfo == null) return yFromBrowser;
-        return Math.max(0, Math.min(yFromBrowser, screenInfo.getPhysicalHeight() - 1));
+    private void runPowerShell(String script) throws Exception {
+        new ProcessBuilder(
+                "powershell.exe",
+                "-NoProfile",
+                "-ExecutionPolicy",
+                "Bypass",
+                "-Command",
+                script
+        ).redirectErrorStream(true).start();
+    }
+
+    private void setBrightness(int value) {
+        try {
+            String script =
+                    "$brightness = Get-WmiObject -Namespace root/WMI -Class WmiMonitorBrightnessMethods; " +
+                            "if ($brightness -ne $null) { $brightness.WmiSetBrightness(1, " + value + "); }";
+
+            runPowerShell(script);
+        } catch (Exception e) {
+            System.err.println("Brightness change failed: " + e.getMessage());
+        }
+    }
+
+    private void enableUsbSelectiveSuspend() {
+        try {
+            runCommand("powercfg /SETACVALUEINDEX SCHEME_CURRENT SUB_USB USBSELECTIVE SUSPEND 1");
+            runCommand("powercfg /SETDCVALUEINDEX SCHEME_CURRENT SUB_USB USBSELECTIVE SUSPEND 1");
+            runCommand("powercfg /SETACTIVE SCHEME_CURRENT");
+            System.out.println("✓ USB selective suspend enabled");
+        } catch (Exception e) {
+            System.err.println("USB selective suspend enable failed: " + e.getMessage());
+        }
+    }
+
+    private void disableUsbSelectiveSuspend() {
+        try {
+            runCommand("powercfg /SETACVALUEINDEX SCHEME_CURRENT SUB_USB USBSELECTIVE SUSPEND 0");
+            runCommand("powercfg /SETDCVALUEINDEX SCHEME_CURRENT SUB_USB USBSELECTIVE SUSPEND 0");
+            runCommand("powercfg /SETACTIVE SCHEME_CURRENT");
+            System.out.println("✓ USB selective suspend disabled");
+        } catch (Exception e) {
+            System.err.println("USB selective suspend disable failed: " + e.getMessage());
+        }
+    }
+
+    private void limitCpuForSleep() {
+        try {
+            runCommand("powercfg /SETACVALUEINDEX SCHEME_CURRENT SUB_PROCESSOR PROCTHROTTLEMAX 30");
+            runCommand("powercfg /SETDCVALUEINDEX SCHEME_CURRENT SUB_PROCESSOR PROCTHROTTLEMAX 30");
+            runCommand("powercfg /SETACTIVE SCHEME_CURRENT");
+            System.out.println("✓ CPU limited to 30%");
+        } catch (Exception e) {
+            System.err.println("CPU limit failed: " + e.getMessage());
+        }
+    }
+
+    private void restoreCpuAfterWake() {
+        try {
+            runCommand("powercfg /SETACVALUEINDEX SCHEME_CURRENT SUB_PROCESSOR PROCTHROTTLEMAX 100");
+            runCommand("powercfg /SETDCVALUEINDEX SCHEME_CURRENT SUB_PROCESSOR PROCTHROTTLEMAX 100");
+            runCommand("powercfg /SETACTIVE SCHEME_CURRENT");
+            System.out.println("✓ CPU restored to 100%");
+        } catch (Exception e) {
+            System.err.println("CPU restore failed: " + e.getMessage());
+        }
+    }
+
+    private void muteSound() {
+        try {
+            runCommand("C:\\Windows\\nircmd.exe mutesysvolume 1");
+            System.out.println("✓ Sound muted");
+        } catch (Exception e) {
+            System.err.println("Mute sound failed: " + e.getMessage());
+        }
+    }
+
+    private void unmuteSound() {
+        try {
+            runCommand("C:\\Windows\\nircmd.exe mutesysvolume 0");
+            System.out.println("✓ Sound unmuted");
+        } catch (Exception e) {
+            System.err.println("Unmute sound failed: " + e.getMessage());
+        }
+    }
+
+    private void stopVideoStream() {
+        try {
+            GStreamerManager gstreamerManager = AgentApplication.getGStreamerManager();
+
+            if (gstreamerManager != null && gstreamerManager.isRunning()) {
+                gstreamerManager.stop();
+                System.out.println("✓ Video stream stopped");
+            }
+        } catch (Exception e) {
+            System.err.println("Video stream stop failed: " + e.getMessage());
+            e.printStackTrace();
+        }
+    }
+
+    private void startVideoStream() {
+        try {
+            GStreamerManager gstreamerManager = AgentApplication.getGStreamerManager();
+
+            if (gstreamerManager != null && !gstreamerManager.isRunning()) {
+                gstreamerManager.start();
+                System.out.println("✓ Video stream started");
+            }
+        } catch (Exception e) {
+            System.err.println("Video stream start failed: " + e.getMessage());
+            e.printStackTrace();
+        }
+    }
+
+    private void activateSoftSleep() {
+        try {
+            System.out.println("Получена команда умного сна");
+
+            stopVideoStream();
+
+            Thread.sleep(1000);
+
+            runCommand("powercfg /setactive SCHEME_MIN");
+
+            limitCpuForSleep();
+            enableUsbSelectiveSuspend();
+            muteSound();
+
+            setBrightness(0);
+
+            Thread.sleep(500);
+
+            BlackoutWindow.showBlackout();
+
+            System.out.println("✓ Smart sleep: blackout enabled, brightness 0, video stopped, sound muted, CPU limited, power saver enabled");
+
+        } catch (Exception e) {
+            System.err.println("Ошибка умного сна: " + e.getMessage());
+            e.printStackTrace();
+        }
+    }
+
+    private void deactivateSoftSleep() {
+        try {
+            System.out.println("Получена команда умного пробуждения");
+
+            BlackoutWindow.hideBlackout();
+
+            Thread.sleep(500);
+
+            setBrightness(70);
+
+            runCommand("powercfg /setactive SCHEME_BALANCED");
+
+            restoreCpuAfterWake();
+            disableUsbSelectiveSuspend();
+            unmuteSound();
+
+            Thread.sleep(500);
+
+            startVideoStream();
+
+            System.out.println("✓ Smart wake: blackout disabled, brightness restored, sound enabled, CPU restored, video restarted");
+
+        } catch (Exception e) {
+            System.err.println("Ошибка умного пробуждения: " + e.getMessage());
+            e.printStackTrace();
+        }
     }
 
     @Override
@@ -254,29 +416,13 @@ public class AgentWebSocketClient extends WebSocketClient {
                         break;
                     }
 
-                    case "POWER_SLEEP": {
-                        System.out.println("Получена команда перевода ПК в сон");
+                    case "SOFT_SLEEP": {
+                        activateSoftSleep();
+                        break;
+                    }
 
-                        try {
-                            String os = System.getProperty("os.name").toLowerCase();
-
-                            if (os.contains("win")) {
-                                Runtime.getRuntime().exec(
-                                        "rundll32.exe powrprof.dll,SetSuspendState 0,1,0"
-                                );
-                            } else if (os.contains("linux")) {
-                                Runtime.getRuntime().exec("systemctl suspend");
-                            } else if (os.contains("mac")) {
-                                Runtime.getRuntime().exec("pmset sleepnow");
-                            } else {
-                                System.out.println("Операционная система не поддерживается для команды сна");
-                            }
-
-                        } catch (Exception e) {
-                            System.err.println("Ошибка перевода ПК в сон: " + e.getMessage());
-                            e.printStackTrace();
-                        }
-
+                    case "SOFT_WAKE": {
+                        deactivateSoftSleep();
                         break;
                     }
 
@@ -287,29 +433,17 @@ public class AgentWebSocketClient extends WebSocketClient {
             } else if ("settings".equals(type)) {
                 String resolution = json.has("resolution") ? json.get("resolution").asText() : "unknown";
                 System.out.println("Settings requested by client: " + resolution);
+
             } else if ("notification".equals(type)) {
                 String msg = json.has("message") ? json.get("message").asText() : "Unknown notification";
                 System.out.println("🔔 NOTIFICATION: " + msg);
 
-                try {
-                    String os = System.getProperty("os.name").toLowerCase();
-                    if (os.contains("win")) {
-                        String psCommand = "powershell.exe -Command \"& {Add-Type -AssemblyName System.Windows.Forms; " +
-                                "$notification = New-Object System.Windows.Forms.NotifyIcon; " +
-                                "$notification.Icon = [System.Drawing.Icon]::ExtractAssociatedIcon((Get-Process -Id $pid).Path); " +
-                                "$notification.BalloonTipTitle = 'Remote PC'; " +
-                                "$notification.BalloonTipText = '" + msg + "'; " +
-                                "$notification.Visible = $true; " +
-                                "$notification.ShowBalloonTip(5000)}\"";
-                        Runtime.getRuntime().exec(psCommand);
-                    } else if (os.contains("linux") || os.contains("mac")) {
-                        Runtime.getRuntime().exec(new String[]{"notify-send", "Remote PC", msg});
-                    }
-                } catch (Exception e) {
-                    System.err.println("Could not show notification: " + e.getMessage());
-                    e.printStackTrace();
-                }
-            }
+                DesktopNotification.show(
+                        "Remote PC",
+                        msg
+                );
+             }
+
         } catch (Exception e) {
             System.err.println("✗ Error processing message: " + e.getMessage());
             e.printStackTrace();

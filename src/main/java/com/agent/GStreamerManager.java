@@ -41,6 +41,11 @@ public class GStreamerManager {
             throw new IOException("gst-launch-1.0.exe not found: " + gstLaunchPath);
         }
 
+        if (process != null && process.isAlive()) {
+            System.out.println("GStreamer already running");
+            return;
+        }
+
         stopOldProcesses();
 
         List<String> command = new ArrayList<>();
@@ -51,25 +56,20 @@ public class GStreamerManager {
         command.add("capture-api=wgc");
         command.add("show-cursor=false");
         command.add("!");
-
         command.add("queue");
         command.add("leaky=downstream");
         command.add("max-size-buffers=2");
         command.add("max-size-bytes=0");
         command.add("max-size-time=0");
         command.add("!");
-
         command.add("d3d11convert");
         command.add("!");
-
         command.add("video/x-raw(memory:D3D11Memory),format=NV12,width=" + width + ",height=" + height + ",framerate=" + fps + "/1");
         command.add("!");
-
         command.add("d3d11download");
         command.add("!");
         command.add("videoconvert");
         command.add("!");
-
         command.add("x264enc");
         command.add("tune=zerolatency");
         command.add("speed-preset=veryfast");
@@ -77,17 +77,13 @@ public class GStreamerManager {
         command.add("key-int-max=30");
         command.add("bframes=0");
         command.add("!");
-
         command.add("video/x-h264,profile=constrained-baseline,stream-format=avc,alignment=au");
         command.add("!");
-
         command.add("h264parse");
         command.add("config-interval=-1");
         command.add("!");
-
         command.add("video/x-h264,profile=constrained-baseline,stream-format=avc,alignment=au");
         command.add("!");
-
         command.add("webrtcsink");
         command.add("name=" + streamName);
         command.add("meta=meta,name=" + streamName);
@@ -116,22 +112,36 @@ public class GStreamerManager {
                 System.err.println("GStreamer log read error: " + e.getMessage());
             }
         });
+
         logThread.setDaemon(true);
         logThread.start();
 
         System.out.println("✓ GStreamer started");
-        System.out.println("  Stream name: " + streamName);
-        System.out.println("  Resolution request: " + width + "x" + height);
-        System.out.println("  FPS request: " + fps);
-        System.out.println("  Signalling port: " + webrtcPort);
-        System.out.println("  HTTP port (reserved): " + httpPort);
     }
 
     public void stop() {
-        if (process != null && process.isAlive()) {
-            process.destroy();
-            System.out.println("✓ GStreamer stopped");
+        try {
+            if (process != null && process.isAlive()) {
+                process.destroy();
+
+                Thread.sleep(1000);
+
+                if (process.isAlive()) {
+                    process.destroyForcibly();
+                }
+
+                System.out.println("✓ GStreamer stopped");
+            }
+
+            stopOldProcesses();
+
+        } catch (Exception e) {
+            System.err.println("GStreamer stop error: " + e.getMessage());
         }
+    }
+
+    public boolean isRunning() {
+        return process != null && process.isAlive();
     }
 
     private void stopOldProcesses() {
@@ -140,7 +150,9 @@ public class GStreamerManager {
                     .redirectErrorStream(true)
                     .start()
                     .waitFor();
+
             System.out.println("Checked and stopped old gst-launch-1.0.exe processes");
+
         } catch (Exception e) {
             System.out.println("Could not stop old gst-launch-1.0.exe processes: " + e.getMessage());
         }

@@ -21,6 +21,7 @@ public class AgentApplication {
     private static String PASSWORD;
 
     private static boolean VIDEO_ENABLED;
+    private static GStreamerManager gstreamerManager;
     private static String VIDEO_PUBLIC_URL;
     private static String VIDEO_STREAM_NAME;
 
@@ -36,7 +37,6 @@ public class AgentApplication {
         System.out.println("     Remote PC Agent v2.0");
         System.out.println("=========================================");
 
-        GStreamerManager gstreamerManager = null;
 
         try {
             loadConfig();
@@ -192,5 +192,8 @@ public class AgentApplication {
             map.put(k2, v2);
             return map;
         }
+    }
+    public static GStreamerManager getGStreamerManager() {
+        return gstreamerManager;
     }
 }
