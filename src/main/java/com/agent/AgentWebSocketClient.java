@@ -22,7 +22,7 @@ public class AgentWebSocketClient extends WebSocketClient {
     private final String webrtcUrl;
     private final String streamName;
     private ScreenInfo screenInfo;
-    private final FileDownloadManager fileDownloadManager = new FileDownloadManager();
+    private final FileDownloadManager fileDownloadManager = new FileDownloadManager(0);
 
     private final ObjectMapper mapper = new ObjectMapper();
     private Timer heartbeatTimer;
@@ -385,17 +385,29 @@ public class AgentWebSocketClient extends WebSocketClient {
                         if (json.has("keyCode")) {
                             int keyCode = json.get("keyCode").asInt();
 
-                            if (json.has("ctrl") && json.get("ctrl").asBoolean()) robot.keyPress(KeyEvent.VK_CONTROL);
-                            if (json.has("alt") && json.get("alt").asBoolean()) robot.keyPress(KeyEvent.VK_ALT);
-                            if (json.has("shift") && json.get("shift").asBoolean()) robot.keyPress(KeyEvent.VK_SHIFT);
+                            if (json.has("ctrl") && json.get("ctrl").asBoolean()) {
+                                robot.keyPress(KeyEvent.VK_CONTROL);
+                            }
+                            if (json.has("alt") && json.get("alt").asBoolean()) {
+                                robot.keyPress(KeyEvent.VK_ALT);
+                            }
+                            if (json.has("shift") && json.get("shift").asBoolean()) {
+                                robot.keyPress(KeyEvent.VK_SHIFT);
+                            }
 
                             robot.keyPress(keyCode);
                             Thread.sleep(20);
                             robot.keyRelease(keyCode);
 
-                            if (json.has("shift") && json.get("shift").asBoolean()) robot.keyRelease(KeyEvent.VK_SHIFT);
-                            if (json.has("alt") && json.get("alt").asBoolean()) robot.keyRelease(KeyEvent.VK_ALT);
-                            if (json.has("ctrl") && json.get("ctrl").asBoolean()) robot.keyRelease(KeyEvent.VK_CONTROL);
+                            if (json.has("shift") && json.get("shift").asBoolean()) {
+                                robot.keyRelease(KeyEvent.VK_SHIFT);
+                            }
+                            if (json.has("alt") && json.get("alt").asBoolean()) {
+                                robot.keyRelease(KeyEvent.VK_ALT);
+                            }
+                            if (json.has("ctrl") && json.get("ctrl").asBoolean()) {
+                                robot.keyRelease(KeyEvent.VK_CONTROL);
+                            }
                         }
                         break;
                     }
@@ -453,26 +465,50 @@ public class AgentWebSocketClient extends WebSocketClient {
                         break;
                     }
 
-                    case "FILE_CANCEL": {
-                        String transferId = json.get("transferId").asText();
-
-                        fileTransferManager.cancelTransfer(transferId);
-                        break;
-                    }
-
                     case "FILE_DOWNLOAD": {
+                        String fileId = json.get("fileId").asText();
                         String fileName = json.get("fileName").asText();
                         String downloadUrl = json.get("downloadUrl").asText();
 
                         new Thread(() -> {
                             try {
-                                fileDownloadManager.downloadFile(fileName, downloadUrl);
+                                fileDownloadManager.downloadFile(
+                                        fileId,
+                                        fileName,
+                                        downloadUrl,
+                                        this::sendFileProgressToServer
+                                );
                             } catch (Exception e) {
                                 System.err.println("File download error: " + e.getMessage());
                                 e.printStackTrace();
                             }
                         }).start();
 
+                        break;
+                    }
+
+                    case "FILE_PAUSE": {
+                        String fileId = json.get("fileId").asText();
+                        fileDownloadManager.pauseDownload(fileId);
+                        break;
+                    }
+
+                    case "FILE_RESUME": {
+                        String fileId = json.get("fileId").asText();
+                        fileDownloadManager.resumeDownload(fileId);
+                        break;
+                    }
+
+                    case "FILE_CANCEL": {
+                        if (json.has("fileId")) {
+                            String fileId = json.get("fileId").asText();
+                            fileDownloadManager.cancelDownload(fileId);
+                        } else if (json.has("transferId")) {
+                            String transferId = json.get("transferId").asText();
+                            fileTransferManager.cancelTransfer(transferId);
+                        } else {
+                            System.out.println("  → FILE_CANCEL has no fileId or transferId");
+                        }
                         break;
                     }
 
@@ -492,11 +528,35 @@ public class AgentWebSocketClient extends WebSocketClient {
                         "Remote PC",
                         msg
                 );
-             }
+            }
 
         } catch (Exception e) {
             System.err.println("✗ Error processing message: " + e.getMessage());
             e.printStackTrace();
+        }
+    }
+
+    private void sendFileProgressToServer(String fileId,
+                                          String fileName,
+                                          long downloadedBytes,
+                                          long totalBytes,
+                                          int percent) {
+        try {
+            Map<String, Object> msg = new HashMap<>();
+            msg.put("type", "FILE_PROGRESS");
+            msg.put("pcName", pcName);
+            msg.put("mac", macAddress);
+            msg.put("fileId", fileId);
+            msg.put("fileName", fileName);
+            msg.put("downloadedBytes", downloadedBytes);
+            msg.put("totalBytes", totalBytes);
+            msg.put("percent", percent);
+
+            String json = mapper.writeValueAsString(msg);
+            send(json);
+
+        } catch (Exception e) {
+            System.err.println("File progress send error: " + e.getMessage());
         }
     }
 
@@ -511,4 +571,5 @@ public class AgentWebSocketClient extends WebSocketClient {
         System.err.println("✗ WebSocket error: " + ex.getMessage());
         ex.printStackTrace();
     }
+
 }
