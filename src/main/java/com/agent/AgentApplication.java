@@ -32,11 +32,14 @@ public class AgentApplication {
     private static int GSTREAMER_HEIGHT;
     private static int GSTREAMER_FPS;
 
+    // Новые параметры для веб-сервера GStreamer
+    private static boolean GSTREAMER_RUN_WEB_SERVER;
+    private static int GSTREAMER_WEB_SERVER_PORT;
+
     public static void main(String[] args) {
         System.out.println("=========================================");
         System.out.println("     Remote PC Agent v2.0");
         System.out.println("=========================================");
-
 
         try {
             loadConfig();
@@ -52,6 +55,8 @@ public class AgentApplication {
             System.out.println("  GStreamer WebRTC port: " + GSTREAMER_WEBRTC_PORT);
             System.out.println("  GStreamer resolution: " + GSTREAMER_WIDTH + "x" + GSTREAMER_HEIGHT);
             System.out.println("  GStreamer FPS: " + GSTREAMER_FPS);
+            System.out.println("  GStreamer run web server: " + GSTREAMER_RUN_WEB_SERVER);
+            System.out.println("  GStreamer web server port: " + GSTREAMER_WEB_SERVER_PORT);
 
             String macAddress = getMacAddress();
             System.out.println("✓ MAC Address: " + macAddress);
@@ -67,7 +72,9 @@ public class AgentApplication {
                         VIDEO_STREAM_NAME,
                         GSTREAMER_WIDTH,
                         GSTREAMER_HEIGHT,
-                        GSTREAMER_FPS
+                        GSTREAMER_FPS,
+                        GSTREAMER_RUN_WEB_SERVER,
+                        GSTREAMER_WEB_SERVER_PORT
                 );
                 gstreamerManager.start();
             }
@@ -122,6 +129,10 @@ public class AgentApplication {
         GSTREAMER_WIDTH = Integer.parseInt(props.getProperty("gstreamer.width", "1280"));
         GSTREAMER_HEIGHT = Integer.parseInt(props.getProperty("gstreamer.height", "720"));
         GSTREAMER_FPS = Integer.parseInt(props.getProperty("gstreamer.fps", "30"));
+
+        // Читаем новые параметры для веб-сервера GStreamer
+        GSTREAMER_RUN_WEB_SERVER = Boolean.parseBoolean(props.getProperty("gstreamer.run.web.server", "false"));
+        GSTREAMER_WEB_SERVER_PORT = Integer.parseInt(props.getProperty("gstreamer.web.server.port", "8000"));
     }
 
     private static String getToken() throws Exception {
@@ -193,6 +204,7 @@ public class AgentApplication {
             return map;
         }
     }
+
     public static GStreamerManager getGStreamerManager() {
         return gstreamerManager;
     }

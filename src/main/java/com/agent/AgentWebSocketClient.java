@@ -22,10 +22,13 @@ public class AgentWebSocketClient extends WebSocketClient {
     private final String webrtcUrl;
     private final String streamName;
     private ScreenInfo screenInfo;
+    private final FileDownloadManager fileDownloadManager = new FileDownloadManager();
 
     private final ObjectMapper mapper = new ObjectMapper();
     private Timer heartbeatTimer;
     private Robot robot;
+    private final FileTransferManager fileTransferManager = new FileTransferManager();
+
 
     public AgentWebSocketClient(String serverUrl,
                                 String pcName,
@@ -423,6 +426,53 @@ public class AgentWebSocketClient extends WebSocketClient {
 
                     case "SOFT_WAKE": {
                         deactivateSoftSleep();
+                        break;
+                    }
+
+                    case "FILE_START": {
+                        String transferId = json.get("transferId").asText();
+                        String fileName = json.get("fileName").asText();
+                        long fileSize = json.get("fileSize").asLong();
+
+                        fileTransferManager.startTransfer(transferId, fileName, fileSize);
+                        break;
+                    }
+
+                    case "FILE_CHUNK": {
+                        String transferId = json.get("transferId").asText();
+                        String chunk = json.get("chunk").asText();
+
+                        fileTransferManager.receiveChunk(transferId, chunk);
+                        break;
+                    }
+
+                    case "FILE_END": {
+                        String transferId = json.get("transferId").asText();
+
+                        fileTransferManager.finishTransfer(transferId);
+                        break;
+                    }
+
+                    case "FILE_CANCEL": {
+                        String transferId = json.get("transferId").asText();
+
+                        fileTransferManager.cancelTransfer(transferId);
+                        break;
+                    }
+
+                    case "FILE_DOWNLOAD": {
+                        String fileName = json.get("fileName").asText();
+                        String downloadUrl = json.get("downloadUrl").asText();
+
+                        new Thread(() -> {
+                            try {
+                                fileDownloadManager.downloadFile(fileName, downloadUrl);
+                            } catch (Exception e) {
+                                System.err.println("File download error: " + e.getMessage());
+                                e.printStackTrace();
+                            }
+                        }).start();
+
                         break;
                     }
 
