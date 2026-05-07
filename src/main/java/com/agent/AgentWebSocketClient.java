@@ -469,6 +469,8 @@ public class AgentWebSocketClient extends WebSocketClient {
                         String fileId = json.get("fileId").asText();
                         String fileName = json.get("fileName").asText();
                         String downloadUrl = json.get("downloadUrl").asText();
+                        String encryptionKey = json.get("encryptionKey").asText();
+                        String iv = json.get("iv").asText();
 
                         new Thread(() -> {
                             try {
@@ -476,6 +478,8 @@ public class AgentWebSocketClient extends WebSocketClient {
                                         fileId,
                                         fileName,
                                         downloadUrl,
+                                        encryptionKey,
+                                        iv,
                                         this::sendFileProgressToServer
                                 );
                             } catch (Exception e) {

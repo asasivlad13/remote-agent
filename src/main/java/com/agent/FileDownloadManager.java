@@ -20,6 +20,8 @@ public class FileDownloadManager {
 
     private final HttpClient httpClient = HttpClient.newHttpClient();
     private final Map<String, DownloadState> downloads = new ConcurrentHashMap<>();
+    private final FileDecryptService fileDecryptService = new FileDecryptService();
+
     private final long speedLimitBytesPerSecond;
 
     public FileDownloadManager() {
@@ -33,6 +35,8 @@ public class FileDownloadManager {
     public void downloadFile(String fileId,
                              String fileName,
                              String downloadUrl,
+                             String encryptionKey,
+                             String iv,
                              FileDownloadProgressListener progressListener) throws Exception {
         String safeFileName = sanitizeFileName(fileName);
 
@@ -47,12 +51,14 @@ public class FileDownloadManager {
 
         Files.createDirectories(targetDir);
 
+        Path encryptedTempPath = targetDir.resolve(safeFileName + ".enc.tmp");
         Path targetPath = targetDir.resolve(safeFileName);
 
-        System.out.println("📥 File download started:");
+        System.out.println("📥 Encrypted file download started:");
         System.out.println("  ID: " + fileId);
         System.out.println("  File: " + safeFileName);
         System.out.println("  URL: " + downloadUrl);
+        System.out.println("  Encrypted temp: " + encryptedTempPath);
         System.out.println("  Target: " + targetPath);
 
         HttpRequest request = HttpRequest.newBuilder()
@@ -81,7 +87,7 @@ public class FileDownloadManager {
         long speedWindowBytes = 0;
 
         try (InputStream inputStream = response.body();
-             OutputStream outputStream = Files.newOutputStream(targetPath)) {
+             OutputStream outputStream = Files.newOutputStream(encryptedTempPath)) {
 
             byte[] buffer = new byte[64 * 1024];
 
@@ -106,10 +112,8 @@ public class FileDownloadManager {
                 downloadedBytes += read;
                 speedWindowBytes += read;
 
-                int percent = 0;
-
                 if (totalBytes > 0) {
-                    percent = (int) ((downloadedBytes * 100) / totalBytes);
+                    int percent = (int) ((downloadedBytes * 100) / totalBytes);
 
                     if (percent != lastPercent) {
                         lastPercent = percent;
@@ -130,6 +134,8 @@ public class FileDownloadManager {
                             );
                         }
                     }
+                } else {
+                    System.out.println("📥 Downloaded encrypted: " + formatBytes(downloadedBytes));
                 }
 
                 if (speedLimitBytesPerSecond > 0) {
@@ -155,9 +161,24 @@ public class FileDownloadManager {
         }
 
         if (state.cancelled) {
+            Files.deleteIfExists(encryptedTempPath);
             Files.deleteIfExists(targetPath);
             return;
         }
+
+        System.out.println("🔓 Decrypting file...");
+
+        try (InputStream encryptedInputStream = Files.newInputStream(encryptedTempPath);
+             OutputStream decryptedOutputStream = Files.newOutputStream(targetPath)) {
+            fileDecryptService.decrypt(
+                    encryptedInputStream,
+                    decryptedOutputStream,
+                    encryptionKey,
+                    iv
+            );
+        }
+
+        Files.deleteIfExists(encryptedTempPath);
 
         if (progressListener != null) {
             progressListener.onProgress(
@@ -169,9 +190,9 @@ public class FileDownloadManager {
             );
         }
 
-        System.out.println("✅ File downloaded:");
+        System.out.println("✅ File downloaded and decrypted:");
         System.out.println("  Target: " + targetPath);
-        System.out.println("  Size: " + formatBytes(downloadedBytes));
+        System.out.println("  Downloaded encrypted size: " + formatBytes(downloadedBytes));
 
         DesktopNotification.show(
                 "Remote PC",
