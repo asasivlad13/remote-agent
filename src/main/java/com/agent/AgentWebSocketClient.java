@@ -39,6 +39,7 @@ public class AgentWebSocketClient extends WebSocketClient {
     private Timer heartbeatTimer;
     private Robot robot;
     private final FileTransferManager fileTransferManager = new FileTransferManager();
+    private final VirtualGamepadService virtualGamepadService = new VirtualGamepadService();
 
 
     public AgentWebSocketClient(String serverUrl,
@@ -118,6 +119,10 @@ public class AgentWebSocketClient extends WebSocketClient {
             @Override
             public void run() {
                 try {
+                    if (!isOpen()) {
+                        return;
+                    }
+
                     Map<String, String> msg = new HashMap<>();
                     msg.put("type", "heartbeat");
                     String json = mapper.writeValueAsString(msg);
@@ -125,7 +130,6 @@ public class AgentWebSocketClient extends WebSocketClient {
                     System.out.println("♥ Heartbeat sent");
                 } catch (Exception e) {
                     System.err.println("✗ Error sending heartbeat: " + e.getMessage());
-                    e.printStackTrace();
                 }
             }
         }, 10000, 10000);
@@ -449,6 +453,22 @@ public class AgentWebSocketClient extends WebSocketClient {
                         robot.keyRelease(KeyEvent.VK_DELETE);
                         robot.keyRelease(KeyEvent.VK_ALT);
                         robot.keyRelease(KeyEvent.VK_CONTROL);
+                        break;
+                    }
+
+
+                    case "GAMEPAD_CONNECT": {
+                        virtualGamepadService.connect();
+                        break;
+                    }
+
+                    case "GAMEPAD_STATE": {
+                        virtualGamepadService.applyState(json);
+                        break;
+                    }
+
+                    case "GAMEPAD_DISCONNECT": {
+                        virtualGamepadService.disconnect();
                         break;
                     }
 
@@ -797,6 +817,7 @@ public class AgentWebSocketClient extends WebSocketClient {
     @Override
     public void onClose(int code, String reason, boolean remote) {
         System.out.println("✗ Connection closed: " + reason);
+        virtualGamepadService.shutdown();
         if (heartbeatTimer != null) heartbeatTimer.cancel();
     }
 

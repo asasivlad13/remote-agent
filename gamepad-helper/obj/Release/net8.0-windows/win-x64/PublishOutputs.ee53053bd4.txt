@@ -1,0 +1,2 @@
+C:\Users\асаси\Desktop\remote-agentV\gamepad-helper\bin\Release\net8.0-windows\win-x64\publish\GamepadHelper.pdb
+C:\Users\асаси\Desktop\remote-agentV\gamepad-helper\bin\Release\net8.0-windows\win-x64\publish\GamepadHelper.exe
