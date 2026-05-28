@@ -1,4 +1,6 @@
-package com.agent;
+package com.agent.video.service;
+
+import com.agent.video.encoder.WebPEncoder;
 
 import javax.imageio.ImageIO;
 import java.awt.*;

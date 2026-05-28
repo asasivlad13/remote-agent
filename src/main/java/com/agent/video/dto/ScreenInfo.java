@@ -1,4 +1,4 @@
-package com.agent;
+package com.agent.video.dto;
 
 import java.awt.*;
 import java.awt.geom.AffineTransform;

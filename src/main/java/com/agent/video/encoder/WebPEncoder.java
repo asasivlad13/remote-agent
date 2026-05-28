@@ -1,4 +1,4 @@
-package com.agent;
+package com.agent.video.encoder;
 
 import javax.imageio.IIOImage;
 import javax.imageio.ImageIO;

@@ -1,4 +1,4 @@
-package com.agent;
+package com.agent.ui.service;
 
 import javax.swing.*;
 import java.awt.*;

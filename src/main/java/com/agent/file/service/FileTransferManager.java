@@ -1,4 +1,6 @@
-package com.agent;
+package com.agent.file.service;
+
+import com.agent.ui.service.DesktopNotification;
 
 import java.io.File;
 import java.io.FileOutputStream;
