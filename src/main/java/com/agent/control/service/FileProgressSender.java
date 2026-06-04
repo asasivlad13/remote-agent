@@ -1,6 +1,5 @@
 package com.agent.control.service;
 
-@FunctionalInterface
 public interface FileProgressSender {
 
     void sendFileProgress(String fileId,
@@ -8,4 +7,7 @@ public interface FileProgressSender {
                           long downloadedBytes,
                           long totalBytes,
                           int percent);
+
+    void sendFileDownloadComplete(String fileId,
+                                  String fileName);
 }

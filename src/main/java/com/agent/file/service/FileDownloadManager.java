@@ -202,6 +202,9 @@ public class FileDownloadManager {
                 "Remote PC",
                 "Файл получен: " + safeFileName + "<br>Папка: Downloads\\RemotePC"
         );
+        if (progressListener != null) {
+            progressListener.onComplete(fileId, safeFileName);
+        }
     }
 
     public void pauseDownload(String fileId) {

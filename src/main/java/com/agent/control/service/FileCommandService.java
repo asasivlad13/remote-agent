@@ -1,5 +1,6 @@
 package com.agent.control.service;
 
+import com.agent.file.listener.FileDownloadProgressListener;
 import com.agent.file.service.FileDownloadManager;
 import com.agent.file.service.FileTransferManager;
 import com.fasterxml.jackson.databind.JsonNode;
@@ -54,7 +55,27 @@ public class FileCommandService {
                         downloadUrl,
                         encryptionKey,
                         iv,
-                        progressSender::sendFileProgress
+                        new FileDownloadProgressListener() {
+                            @Override
+                            public void onProgress(String fileId,
+                                                   String fileName,
+                                                   long downloadedBytes,
+                                                   long totalBytes,
+                                                   int percent) {
+                                progressSender.sendFileProgress(
+                                        fileId,
+                                        fileName,
+                                        downloadedBytes,
+                                        totalBytes,
+                                        percent
+                                );
+                            }
+
+                            @Override
+                            public void onComplete(String fileId, String fileName) {
+                                progressSender.sendFileDownloadComplete(fileId, fileName);
+                            }
+                        }
                 );
             } catch (Exception e) {
                 System.err.println("File download error: " + e.getMessage());

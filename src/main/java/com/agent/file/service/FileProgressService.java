@@ -39,4 +39,23 @@ public class FileProgressService {
             System.err.println("File progress send error: " + e.getMessage());
         }
     }
+
+    public void sendFileDownloadComplete(String pcName,
+                                         String macAddress,
+                                         String fileId,
+                                         String fileName) {
+        try {
+            Map<String, Object> msg = new HashMap<>();
+            msg.put("type", "FILE_DOWNLOAD_COMPLETE");
+            msg.put("pcName", pcName);
+            msg.put("mac", macAddress);
+            msg.put("fileId", fileId);
+            msg.put("fileName", fileName);
+
+            client.send(mapper.writeValueAsString(msg));
+
+        } catch (Exception e) {
+            System.err.println("File complete send error: " + e.getMessage());
+        }
+    }
 }

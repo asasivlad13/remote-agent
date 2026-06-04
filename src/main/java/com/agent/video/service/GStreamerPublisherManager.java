@@ -4,6 +4,7 @@ import java.io.File;
 import java.io.IOException;
 import java.util.ArrayList;
 import java.util.List;
+import java.util.concurrent.TimeUnit;
 
 public class GStreamerPublisherManager {
 
@@ -30,16 +31,21 @@ public class GStreamerPublisherManager {
         this.bitrateKbps = bitrateKbps;
     }
 
-    public void start() throws IOException {
-        if (process != null && process.isAlive()) {
-            System.out.println("GStreamer publisher already running");
-            return;
-        }
-
+    public synchronized void start() throws IOException {
         File exeFile = new File(gstLaunchPath);
+
         if (!exeFile.exists()) {
             throw new IOException("gst-launch-1.0.exe not found: " + gstLaunchPath);
         }
+
+        /*
+         * Важно:
+         * перед каждой новой трансляцией полностью очищаем старый GStreamer.
+         * Иначе может остаться старый gst-launch-1.0.exe, который забирает ресурсы,
+         * держит старый pipeline и даёт 2-3 FPS.
+         */
+        stopLocalProcess();
+        stopOldGStreamerProcesses();
 
         List<String> cmd = buildCommand();
         ProcessBuilder pb = new ProcessBuilder(cmd);
@@ -52,6 +58,7 @@ public class GStreamerPublisherManager {
         pb.inheritIO();
 
         process = pb.start();
+
         System.out.println("✓ GStreamer publisher started");
         System.out.println("  RTSP target: " + rtspUrl);
         System.out.println("  Resolution: " + width + "x" + height);
@@ -64,28 +71,35 @@ public class GStreamerPublisherManager {
         cmd.add(gstLaunchPath);
         cmd.add("-e");
 
-        // d3d11screencapturesrc = актуальный Windows screen capture источник
-        // videoscale + caps = задаем потоковое разрешение
-        // x264enc = кодируем H.264
-        // rtspclientsink = публикуем в локальный RTSP сервер (MediaMTX)
         cmd.add("d3d11screencapturesrc");
         cmd.add("!");
         cmd.add("queue");
+        cmd.add("leaky=downstream");
+        cmd.add("max-size-buffers=2");
+        cmd.add("max-size-bytes=0");
+        cmd.add("max-size-time=0");
+
         cmd.add("!");
         cmd.add("videoconvert");
+
         cmd.add("!");
         cmd.add("videoscale");
+
         cmd.add("!");
         cmd.add("video/x-raw,width=" + width + ",height=" + height + ",framerate=" + fps + "/1");
+
         cmd.add("!");
         cmd.add("x264enc");
         cmd.add("tune=zerolatency");
         cmd.add("speed-preset=ultrafast");
         cmd.add("bitrate=" + bitrateKbps);
         cmd.add("key-int-max=" + fps);
+        cmd.add("bframes=0");
+
         cmd.add("!");
         cmd.add("h264parse");
         cmd.add("config-interval=-1");
+
         cmd.add("!");
         cmd.add("rtspclientsink");
         cmd.add("location=" + rtspUrl);
@@ -94,8 +108,9 @@ public class GStreamerPublisherManager {
         return cmd;
     }
 
-    public void restartWithPreset(String resolution) throws IOException {
+    public synchronized void restartWithPreset(String resolution) throws IOException {
         String[] parts = resolution.split("x");
+
         if (parts.length != 2) {
             throw new IOException("Invalid resolution preset: " + resolution);
         }
@@ -107,21 +122,55 @@ public class GStreamerPublisherManager {
         start();
     }
 
-    public void stop() {
-        if (process != null && process.isAlive()) {
-            process.destroy();
-            try {
-                Thread.sleep(1000);
-            } catch (InterruptedException ignored) {
-            }
+    public synchronized void stop() {
+        stopLocalProcess();
+        stopOldGStreamerProcesses();
+    }
+
+    private void stopLocalProcess() {
+        if (process == null) {
+            return;
+        }
+
+        try {
             if (process.isAlive()) {
-                process.destroyForcibly();
+                process.destroy();
+
+                boolean stopped = process.waitFor(1500, TimeUnit.MILLISECONDS);
+
+                if (!stopped && process.isAlive()) {
+                    process.destroyForcibly();
+                    process.waitFor(1500, TimeUnit.MILLISECONDS);
+                }
+
+                System.out.println("✓ GStreamer publisher stopped");
             }
-            System.out.println("GStreamer publisher stopped");
+        } catch (InterruptedException e) {
+            Thread.currentThread().interrupt();
+            System.out.println("GStreamer publisher stop interrupted");
+        } finally {
+            process = null;
         }
     }
 
-    public boolean isRunning() {
+    private void stopOldGStreamerProcesses() {
+        runQuietly("taskkill", "/F", "/IM", "gst-launch-1.0.exe");
+        System.out.println("Checked and stopped old gst-launch-1.0.exe processes");
+    }
+
+    private void runQuietly(String... command) {
+        try {
+            Process cleanup = new ProcessBuilder(command)
+                    .redirectErrorStream(true)
+                    .start();
+
+            cleanup.waitFor(3, TimeUnit.SECONDS);
+        } catch (Exception ignored) {
+            // Если процесса нет — это нормально.
+        }
+    }
+
+    public synchronized boolean isRunning() {
         return process != null && process.isAlive();
     }
 }

@@ -7,4 +7,7 @@ public interface FileDownloadProgressListener {
                     long downloadedBytes,
                     long totalBytes,
                     int percent);
+
+    void onComplete(String fileId,
+                    String fileName);
 }

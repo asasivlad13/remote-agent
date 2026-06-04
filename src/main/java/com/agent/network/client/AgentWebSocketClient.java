@@ -100,7 +100,13 @@ public class AgentWebSocketClient extends WebSocketClient {
         fileCommandService = new FileCommandService(
                 fileTransferManager,
                 fileDownloadManager,
-                (fileId, fileName, downloadedBytes, totalBytes, percent) ->
+                new com.agent.control.service.FileProgressSender() {
+                    @Override
+                    public void sendFileProgress(String fileId,
+                                                 String fileName,
+                                                 long downloadedBytes,
+                                                 long totalBytes,
+                                                 int percent) {
                         fileProgressService.sendFileProgress(
                                 pcName,
                                 macAddress,
@@ -109,7 +115,19 @@ public class AgentWebSocketClient extends WebSocketClient {
                                 downloadedBytes,
                                 totalBytes,
                                 percent
-                        )
+                        );
+                    }
+
+                    @Override
+                    public void sendFileDownloadComplete(String fileId, String fileName) {
+                        fileProgressService.sendFileDownloadComplete(
+                                pcName,
+                                macAddress,
+                                fileId,
+                                fileName
+                        );
+                    }
+                }
         );
 
         commandDispatcher = new CommandDispatcher(
@@ -117,7 +135,7 @@ public class AgentWebSocketClient extends WebSocketClient {
                 keyboardControlService,
                 powerControlService,
                 fileCommandService,
-                virtualGamepadService
+                 virtualGamepadService
         );
     }
 
