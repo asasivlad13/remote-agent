@@ -1,10 +1,15 @@
 package com.agent.control.service;
 
-import com.agent.AgentApplication;
 import com.agent.ui.service.BlackoutWindow;
-import com.agent.video.service.GStreamerManager;
+import com.agent.video.VideoStreamService;
 
 public class PowerControlService {
+
+    private final VideoStreamService videoStreamService;
+
+    public PowerControlService(VideoStreamService videoStreamService) {
+        this.videoStreamService = videoStreamService;
+    }
 
     public void activateSoftSleep() {
         try {
@@ -155,11 +160,8 @@ public class PowerControlService {
 
     private void stopVideoStream() {
         try {
-            GStreamerManager gstreamerManager = AgentApplication.getGStreamerManager();
-
-            if (gstreamerManager != null && gstreamerManager.isRunning()) {
-                gstreamerManager.stop();
-                System.out.println("✓ Video stream stopped");
+            if (videoStreamService != null && videoStreamService.isRunning()) {
+                videoStreamService.stop();
             }
         } catch (Exception e) {
             System.err.println("Video stream stop failed: " + e.getMessage());
@@ -169,11 +171,8 @@ public class PowerControlService {
 
     private void startVideoStream() {
         try {
-            GStreamerManager gstreamerManager = AgentApplication.getGStreamerManager();
-
-            if (gstreamerManager != null && !gstreamerManager.isRunning()) {
-                gstreamerManager.start();
-                System.out.println("✓ Video stream started");
+            if (videoStreamService != null && !videoStreamService.isRunning()) {
+                videoStreamService.start();
             }
         } catch (Exception e) {
             System.err.println("Video stream start failed: " + e.getMessage());

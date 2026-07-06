@@ -4,11 +4,10 @@ import com.agent.auth.service.AuthClient;
 import com.agent.config.AgentConfig;
 import com.agent.network.client.AgentWebSocketClient;
 import com.agent.network.service.MacAddressProvider;
+import com.agent.video.VideoStreamService;
 import com.agent.video.service.GStreamerManager;
 
 public class AgentApplication {
-
-    private static GStreamerManager gstreamerManager;
 
     public static void main(String[] args) {
         System.out.println("=========================================");
@@ -26,8 +25,10 @@ public class AgentApplication {
             String token = new AuthClient(config).getToken();
             System.out.println("✓ Token obtained");
 
+            VideoStreamService videoStreamService = null;
+
             if (config.isVideoEnabled()) {
-                gstreamerManager = new GStreamerManager(
+                GStreamerManager gstreamerManager = new GStreamerManager(
                         config.getGstLaunchPath(),
                         config.getGstreamerHttpPort(),
                         config.getGstreamerWebrtcPort(),
@@ -39,7 +40,8 @@ public class AgentApplication {
                         config.getGstreamerWebServerPort()
                 );
 
-                gstreamerManager.start();
+                videoStreamService = new VideoStreamService(gstreamerManager);
+                videoStreamService.start();
             }
 
             AgentWebSocketClient client = new AgentWebSocketClient(
@@ -48,7 +50,8 @@ public class AgentApplication {
                     macAddress,
                     token,
                     config.getVideoPublicUrl(),
-                    config.getVideoStreamName()
+                    config.getVideoStreamName(),
+                    videoStreamService
             );
 
             client.connect();
@@ -79,9 +82,5 @@ public class AgentApplication {
         System.out.println("  GStreamer FPS: " + config.getGstreamerFps());
         System.out.println("  GStreamer run web server: " + config.isGstreamerRunWebServer());
         System.out.println("  GStreamer web server port: " + config.getGstreamerWebServerPort());
-    }
-
-    public static GStreamerManager getGStreamerManager() {
-        return gstreamerManager;
     }
 }

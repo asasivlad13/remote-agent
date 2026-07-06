@@ -18,7 +18,7 @@ import com.agent.control.service.FileCommandService;
 import com.agent.control.service.CommandDispatcher;
 import com.agent.ui.service.NotificationService;
 import com.agent.file.service.FileProgressService;
-
+import com.agent.video.VideoStreamService;
 import java.awt.Robot;
 import java.net.URI;
 
@@ -28,7 +28,7 @@ public class AgentWebSocketClient extends WebSocketClient {
     private FileProgressService fileProgressService;
     private final NotificationService notificationService = new NotificationService();
     private FileCommandService fileCommandService;
-    private final PowerControlService powerControlService = new PowerControlService();
+    private final PowerControlService powerControlService;
     private MouseControlService mouseControlService;
     private KeyboardControlService keyboardControlService;
     private AgentRegistrationService registrationService;
@@ -54,13 +54,15 @@ public class AgentWebSocketClient extends WebSocketClient {
                                 String macAddress,
                                 String token,
                                 String webrtcUrl,
-                                String streamName) {
+                                String streamName,
+                                VideoStreamService videoStreamService) {
         super(URI.create(serverUrl));
         this.pcName = pcName;
         this.macAddress = macAddress;
         this.token = token;
         this.webrtcUrl = webrtcUrl;
         this.streamName = streamName;
+        this.powerControlService = new PowerControlService(videoStreamService);
     }
 
     @Override
